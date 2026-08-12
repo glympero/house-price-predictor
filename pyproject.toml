@@ -23,6 +23,7 @@ dev = [
 ]
 notebooks = [
     "ipykernel>=6.29",
+    "jupyterlab>=4.6.3",
     "nbconvert>=7.16",
     "seaborn>=0.13",
 ]
