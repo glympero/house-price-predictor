@@ -11,6 +11,8 @@ REPORTS_DIR = REPO_ROOT / "docs" / "figures"
 DATASET_URL = "https://archive.ics.uci.edu/static/public/477/real+estate+valuation+data+set.zip"
 RAW_DATASET_FILENAME = "real_estate_valuation.xlsx"
 
+# Seeds every stochastic step (train/test split, model randomness) so that
+# any run reproduces the same split, models, and metrics.
 RANDOM_SEED = 42
 TEST_SET_FRACTION = 0.2
 
@@ -29,8 +31,11 @@ COLUMN_RENAMES = {
 
 FEATURE_COLUMNS = [c for c in COLUMN_RENAMES.values() if c != TARGET_COLUMN]
 
-# Plausible value ranges for validation, from the dataset's documentation
-# (Sindian District, New Taipei City, Taiwan; transactions 2012-2013).
+# Plausibility envelopes for ingestion validation, derived from the dataset's
+# documentation (Sindian District, New Taipei City, Taiwan; transactions
+# 2012-2013 — hence the coordinate window around the district and the date
+# bounds). Kept deliberately loose: they should catch corruption and unit
+# errors, not reject legitimate values near the observed extremes.
 VALID_RANGES = {
     "transaction_date": (2012.0, 2014.0),
     "house_age_years": (0.0, 100.0),

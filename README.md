@@ -10,10 +10,12 @@ analysis, model training and evaluation, and a production-style serving layer
 
 ## Dataset
 
-[UCI Real Estate Valuation](https://archive.ics.uci.edu/dataset/477/real+estate+valuation+data+set)
-(also published on Kaggle as "Real Estate Price Prediction") — 414 transactions
-from Sindian District, New Taipei City, Taiwan. Downloaded automatically; not
-committed to the repo.
+The project uses the [UCI Real Estate Valuation dataset](https://archive.ics.uci.edu/dataset/477/real+estate+valuation+data+set)
+(also published on Kaggle as "Real Estate Price Prediction"): 414 housing
+transactions from Sindian District, New Taipei City, Taiwan, recorded in
+2012–2013. The raw file is fetched on first run by `house_prices.data` and
+cached under `data/`, which is why you won't find it in the repo — anyone
+cloning the project gets the same data by running the code.
 
 ## Quick start
 
