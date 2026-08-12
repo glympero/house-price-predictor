@@ -1,0 +1,49 @@
+[project]
+name = "house-prices"
+version = "0.1.0"
+description = "End-to-end house price prediction: data pipeline, model training, and a FastAPI serving layer"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "joblib>=1.4",
+    "matplotlib>=3.9",
+    "openpyxl>=3.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "pydantic>=2.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "httpx>=0.27",
+]
+notebooks = [
+    "ipykernel>=6.29",
+    "nbconvert>=7.16",
+    "seaborn>=0.13",
+]
+slides = [
+    "python-pptx>=1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/house_prices"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
