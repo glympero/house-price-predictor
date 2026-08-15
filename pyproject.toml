@@ -45,6 +45,12 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.format]
+# Notebooks are linted but not auto-formatted. Reformatting them rewrites
+# committed files that carry executed output, which produces large diffs
+# unrelated to any change in the analysis.
+exclude = ["notebooks/*.ipynb"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
