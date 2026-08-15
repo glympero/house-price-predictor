@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>House Price Predictor</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --ink: #1c2430;
+        --muted: #667085;
+        --line: #dfe3e8;
+        --accent: #2f5d9e;
+        --note-bg: #f0f4fa;
+        --stop-bg: #fdf2f3;
+        --stop-line: #e3a3ab;
+        --stop-ink: #8f2233;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 2rem 1rem 4rem;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main { max-width: 44rem; margin: 0 auto; }
+      h1 { font-size: 1.45rem; margin: 0 0 0.25rem; }
+      .sub { color: var(--muted); margin: 0 0 1.75rem; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1.25rem 1.5rem 1.5rem;
+      }
+      .grid { display: grid; gap: 1rem 1.25rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      @media (max-width: 34rem) { .grid { grid-template-columns: 1fr; } }
+      label { display: block; font-weight: 600; font-size: 0.875rem; margin-bottom: 0.3rem; }
+      .hint { display: block; font-weight: 400; color: var(--muted); font-size: 0.8125rem; }
+      input {
+        width: 100%;
+        padding: 0.5rem 0.6rem;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        font: inherit;
+        background: #fff;
+        color: inherit;
+      }
+      button {
+        margin-top: 1.25rem;
+        padding: 0.6rem 1.4rem;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: default; }
+
+      #result, #refusal { display: none; margin-top: 1.75rem; }
+      .result-label { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.02em;
+                      text-transform: uppercase; color: var(--muted); }
+      .headline { font-size: 2rem; font-weight: 700; letter-spacing: -0.01em; margin-top: 0.15rem; }
+      .range-value { font-size: 1.25rem; font-weight: 600; margin-top: 0.15rem; }
+      .block { margin-top: 1.35rem; }
+      .foot { color: var(--muted); font-size: 0.85rem; margin-top: 0.4rem; }
+
+      .limitation {
+        margin-top: 1.6rem;
+        padding: 0.85rem 1rem;
+        background: var(--note-bg);
+        border-left: 3px solid var(--accent);
+        border-radius: 4px;
+        font-size: 0.875rem;
+      }
+      .limitation strong { display: block; margin-bottom: 0.2rem; }
+
+      #refusal {
+        padding: 1rem 1.15rem;
+        background: var(--stop-bg);
+        border: 1px solid var(--stop-line);
+        border-radius: 8px;
+      }
+      #refusal h2 { margin: 0 0 0.35rem; font-size: 1.05rem; color: var(--stop-ink); }
+      .unsupported { margin-top: 0.85rem; }
+      .unsupported dt { font-weight: 600; font-size: 0.875rem; }
+      .unsupported dd { margin: 0 0 0.6rem; font-size: 0.875rem; color: var(--muted); }
+
+      details { margin-top: 1.5rem; }
+      summary { cursor: pointer; font-size: 0.875rem; font-weight: 600; color: var(--accent); }
+      table { border-collapse: collapse; margin-top: 0.75rem; font-size: 0.8125rem; width: 100%; }
+      th, td { text-align: left; padding: 0.3rem 0.6rem 0.3rem 0; vertical-align: top; }
+      th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+      td { word-break: break-all; }
+      .error { color: var(--stop-ink); margin-top: 1rem; font-size: 0.9rem; }
+      footer { margin-top: 2rem; color: var(--muted); font-size: 0.8125rem; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>House Price Predictor</h1>
+      <p class="sub">
+        Estimates price per unit area for properties in Sindian District, New Taipei City.
+      </p>
+
+      <div class="panel">
+        <form id="form">
+          <div class="grid">
+            <div>
+              <label for="house_age_years">House age
+                <span class="hint" id="hint-house_age_years">&nbsp;</span>
+              </label>
+              <input id="house_age_years" type="number" step="0.1" value="10" required />
+            </div>
+            <div>
+              <label for="mrt_distance_m">Distance to MRT station
+                <span class="hint" id="hint-mrt_distance_m">&nbsp;</span>
+              </label>
+              <input id="mrt_distance_m" type="number" step="1" value="250" required />
+            </div>
+            <div>
+              <label for="n_convenience_stores">Convenience stores
+                <span class="hint" id="hint-n_convenience_stores">&nbsp;</span>
+              </label>
+              <input id="n_convenience_stores" type="number" step="1" value="6" required />
+            </div>
+            <div>
+              <label for="latitude">Latitude
+                <span class="hint" id="hint-latitude">&nbsp;</span>
+              </label>
+              <input id="latitude" type="number" step="0.0001" value="24.975" required />
+            </div>
+            <div>
+              <label for="longitude">Longitude
+                <span class="hint" id="hint-longitude">&nbsp;</span>
+              </label>
+              <input id="longitude" type="number" step="0.0001" value="121.540" required />
+            </div>
+          </div>
+          <button id="submit" type="submit">Estimate</button>
+        </form>
+
+        <div id="result">
+          <div class="result-label">Estimated price per unit area</div>
+          <div class="headline" id="headline"></div>
+          <div class="foot" id="headline-detail"></div>
+
+          <div class="block">
+            <div class="result-label">Estimated uncertainty range</div>
+            <div class="range-value" id="range"></div>
+            <div class="foot">
+              Based on out-of-fold prediction errors from the selected model. This is an
+              empirical uncertainty range, not a guarantee.
+            </div>
+          </div>
+
+          <div class="limitation">
+            <strong>Dataset limitation</strong>
+            The model was developed from property transactions in Sindian District,
+            New Taipei City, recorded in 2012 and 2013. Predictions describe that
+            historical dataset and should not be interpreted as current market valuations.
+          </div>
+        </div>
+
+        <div id="refusal">
+          <h2>No estimate</h2>
+          <div>This property is outside the range supported by the model.</div>
+          <dl class="unsupported" id="unsupported"></dl>
+          <div>No prediction was produced.</div>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <details id="model-details">
+          <summary>Model details</summary>
+          <table id="model-table"></table>
+        </details>
+      </div>
+
+      <footer>
+        <a href="/docs">API documentation</a> &middot;
+        <a href="/model/info">/model/info</a>
+      </footer>
+    </main>
+
+    <script>
+      const FIELDS = [
+        "house_age_years",
+        "mrt_distance_m",
+        "n_convenience_stores",
+        "latitude",
+        "longitude",
+      ];
+      const UNITS = {
+        house_age_years: " years",
+        mrt_distance_m: " m",
+        n_convenience_stores: "",
+        latitude: "",
+        longitude: "",
+      };
+      const PING_IN_M2 = 3.3;
+
+      let info = null;
+
+      const twd = (unitValue) => Math.round(unitValue * 10000);
+      const withCommas = (value) => Math.round(value).toLocaleString("en-US");
+      const tidy = (value) =>
+        Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
+
+      // Supported ranges come from the fitted artifact, never from constants here,
+      // so they cannot drift away from the model that is actually serving.
+      async function loadModelInfo() {
+        const response = await fetch("/model/info");
+        if (!response.ok) return;
+        info = await response.json();
+
+        for (const field of FIELDS) {
+          const bounds = info.training_feature_ranges[field];
+          const hint = document.getElementById("hint-" + field);
+          if (!bounds || !hint) continue;
+          hint.textContent =
+            "Supported model range: " +
+            tidy(bounds.min) + " to " + tidy(bounds.max) + UNITS[field];
+
+          // The browser anchors its step grid to `min`. These minimums are real
+          // measurements, so a fixed step would make ordinary values like 250
+          // invalid. Only the integer count keeps a step.
+          const input = document.getElementById(field);
+          input.min = bounds.min;
+          input.max = bounds.max;
+          if (field !== "n_convenience_stores") input.step = "any";
+        }
+
+        const holdout = info.holdout || {};
+        const rows = [
+          ["Model", info.model_name],
+          ["Why this model", info.selection_reason],
+          ["Dataset rows", info.n_dataset_rows],
+          ["Fitted on", info.n_training_rows + " training rows"],
+          ["Holdout", info.n_holdout_rows + " rows, used once"],
+          ["CV RMSE", info.cv_rmse.toFixed(3)],
+          ["CV MAE", info.cv_mae.toFixed(3)],
+          ["CV R²", info.cv_r2.toFixed(3)],
+          ["Holdout RMSE", holdout.rmse ? holdout.rmse.toFixed(3) : "n/a"],
+          ["Holdout MAE", holdout.mae ? holdout.mae.toFixed(3) : "n/a"],
+          ["Holdout R²", holdout.r2 ? holdout.r2.toFixed(3) : "n/a"],
+          [
+            "Exploratory interval coverage",
+            holdout.interval_coverage
+              ? (holdout.interval_coverage * 100).toFixed(0) +
+                "% on the holdout, which had already been inspected when the interval was " +
+                "revised, so this is exploratory rather than independently validated"
+              : "n/a",
+          ],
+          [
+            "Residual offsets",
+            info.residual_bounds.lower.toFixed(2) + " / +" + info.residual_bounds.upper.toFixed(2),
+          ],
+          ["Features used", info.features_used.join(", ")],
+          ["Trained at", info.trained_at],
+          ["scikit-learn", info.sklearn_version],
+          ["Data SHA-256", info.data_sha256],
+        ];
+        document.getElementById("model-table").innerHTML = rows
+          .map(([key, value]) => "<tr><th>" + key + "</th><td>" + value + "</td></tr>")
+          .join("");
+      }
+
+      function showPrediction(body) {
+        const perPing = twd(body.predicted_price);
+        document.getElementById("headline").textContent =
+          withCommas(perPing) + " TWD per ping";
+        document.getElementById("headline-detail").textContent =
+          "Model output: " + body.predicted_price.toFixed(1) +
+          " × 10,000 TWD per ping. 1 ping = " + PING_IN_M2 + " m², so about " +
+          withCommas(perPing / PING_IN_M2) + " TWD per m².";
+
+        document.getElementById("range").textContent =
+          withCommas(twd(body.interval.lower)) + " to " +
+          withCommas(twd(body.interval.upper)) + " TWD per ping";
+
+        document.getElementById("result").style.display = "block";
+        document.getElementById("refusal").style.display = "none";
+      }
+
+      function showRefusal(detail) {
+        const list = document.getElementById("unsupported");
+        list.innerHTML = detail.fields
+          .map((item) => {
+            const unit = UNITS[item.field] || "";
+            const name = item.field.replace(/_/g, " ");
+            return (
+              "<dt>" + name + ": " + tidy(item.value) + unit + "</dt>" +
+              "<dd>Supported: " + tidy(item.training_min) + " to " +
+              tidy(item.training_max) + unit + "</dd>"
+            );
+          })
+          .join("");
+        document.getElementById("refusal").style.display = "block";
+        document.getElementById("result").style.display = "none";
+      }
+
+      document.getElementById("form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = document.getElementById("submit");
+        const error = document.getElementById("error");
+        button.disabled = true;
+        error.textContent = "";
+
+        const payload = {};
+        for (const field of FIELDS) {
+          payload[field] = Number(document.getElementById(field).value);
+        }
+
+        try {
+          const response = await fetch("/predict", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const body = await response.json();
+
+          if (response.ok) {
+            showPrediction(body);
+          } else if (body.detail && body.detail.error === "outside_model_support") {
+            showRefusal(body.detail);
+          } else {
+            throw new Error("The request was rejected as invalid.");
+          }
+        } catch (failure) {
+          document.getElementById("result").style.display = "none";
+          document.getElementById("refusal").style.display = "none";
+          error.textContent = failure.message;
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      loadModelInfo();
+    </script>
+  </body>
+</html>
