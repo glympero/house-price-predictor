@@ -22,6 +22,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Generated presentation. Rebuild with presentation/build_slides.py.
+presentation/slides.pptx
+
 # Packaging output
 dist/
 *.zip
