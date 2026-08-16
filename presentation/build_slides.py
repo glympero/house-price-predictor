@@ -439,7 +439,7 @@ def slide_2(prs: Presentation, metadata: dict):
 
 def slide_3(prs: Presentation, metadata: dict):
     slide = blank_slide(prs)
-    add_header(slide, "Protect the evidence before exploring the target", "Validation design", 3)
+    add_header(slide, "Location-disjoint development and final test", "Validation design", 3)
 
     add_card(
         slide,
@@ -634,13 +634,13 @@ def slide_4(prs: Presentation):
 
     add_footer(
         slide,
-        "Log-distance materially improves the linear benchmark; EDA never sees protected targets",
+        "Log-distance improves the linear benchmark; EDA uses development rows only",
     )
 
 
 def slide_5(prs: Presentation, metadata: dict):
     slide = blank_slide(prs)
-    add_header(slide, "The nonlinear candidate earns the production role", "Model evidence", 5)
+    add_header(slide, "Grouped validation selects histogram boosting", "Model evidence", 5)
 
     names = [
         ("mean_baseline", "Mean"),
@@ -728,7 +728,16 @@ def slide_5(prs: Presentation, metadata: dict):
     add_text(
         slide, "4.36 train  →  6.94 CV", 9.35, 5.6, 2.8, 0.28, size=17, color=ORANGE, bold=True
     )
-    add_text(slide, "Recorded—not hidden", 9.35, 6.02, 2.8, 0.2, size=9.5, color=MUTED)
+    add_text(
+        slide,
+        "The gap indicates some overfitting",
+        9.35,
+        6.02,
+        2.8,
+        0.2,
+        size=9.5,
+        color=MUTED,
+    )
 
     add_footer(
         slide, "Primary rule: lowest non-baseline grouped-CV RMSE; protected holdout unavailable"
@@ -739,7 +748,7 @@ def slide_6(prs: Presentation):
     slide = blank_slide(prs)
     add_header(
         slide,
-        "Keep the linear learning path—without forcing the model choice",
+        "Linear and tree models use different preprocessing",
         "Model-specific preprocessing",
         6,
     )
@@ -839,15 +848,13 @@ def slide_6(prs: Presentation):
 
     add_footer(
         slide,
-        "Learning depth explains the baseline; measured validation evidence selects production",
+        "Linear concepts explain the benchmark; grouped CV selects the production model",
     )
 
 
 def slide_7(prs: Presentation, evaluation: dict):
     slide = blank_slide(prs)
-    add_header(
-        slide, "The final test is worse—and that is the honest result", "Protected holdout", 7
-    )
+    add_header(slide, "Final performance on unseen locations", "Protected holdout", 7)
 
     add_label(
         slide,
@@ -859,11 +866,11 @@ def slide_7(prs: Presentation, evaluation: dict):
         color=RED,
     )
     metrics = [
-        ("RMSE", f"{evaluation['rmse']:.2f}", ORANGE),
-        ("MAE", f"{evaluation['mae']:.2f}", BLUE),
-        ("R²", f"{evaluation['r2']:.3f}", TEAL),
+        ("RMSE", f"{evaluation['rmse']:.2f}", "price-density units", ORANGE),
+        ("MAE", f"{evaluation['mae']:.2f}", "price-density units", BLUE),
+        ("R²", f"{evaluation['r2']:.3f}", "unitless", TEAL),
     ]
-    for index, (label, value, accent) in enumerate(metrics):
+    for index, (label, value, unit, accent) in enumerate(metrics):
         add_card(
             slide,
             0.72,
@@ -872,7 +879,7 @@ def slide_7(prs: Presentation, evaluation: dict):
             0.92,
             label,
             value,
-            "price-density units",
+            unit,
             accent=accent,
         )
 
@@ -921,7 +928,7 @@ def slide_8(prs: Presentation, metadata: dict, evaluation: dict):
     slide = blank_slide(prs)
     add_header(
         slide,
-        "Interpret where it fails, not just what ranks first",
+        "Error patterns and uncertainty",
         "Diagnostics and uncertainty",
         8,
     )
@@ -1056,7 +1063,10 @@ def slide_8(prs: Presentation, metadata: dict, evaluation: dict):
 
     add_footer(
         slide,
-        "Interpretation combines training-only error slices with cautious final-test diagnostics",
+        (
+            "Interpretation combines training-only error slices with descriptive "
+            "final-test diagnostics"
+        ),
     )
 
 
@@ -1165,7 +1175,7 @@ def slide_10(prs: Presentation):
         ("2", "Protect", "Pin the source; split locations before target-aware EDA."),
         ("3", "Learn", "Use correlations for hypotheses; compare on grouped folds."),
         ("4", "Choose", "Bound tuning; lowest grouped-CV RMSE wins."),
-        ("5", "Report", "Freeze, test once, expose the expensive-tail weakness."),
+        ("5", "Report", "Freeze, test once, report the expensive-tail weakness."),
     ]
     for index, (number, title, detail) in enumerate(story):
         y = 1.48 + index * 0.9
@@ -1193,7 +1203,7 @@ def slide_10(prs: Presentation):
         )
 
     add_rect(slide, 7.45, 1.48, 5.12, 2.05, fill=NAVY_2, line=None)
-    add_text(slide, "Honest limits", 7.8, 1.82, 2.0, 0.3, size=17, color=WHITE, bold=True)
+    add_text(slide, "Current limits", 7.8, 1.82, 2.0, 0.3, size=17, color=WHITE, bold=True)
     add_text(
         slide,
         (
@@ -1210,7 +1220,7 @@ def slide_10(prs: Presentation):
     )
 
     add_rect(slide, 7.45, 3.82, 5.12, 1.72, fill=TEAL_LIGHT, line=None)
-    add_text(slide, "Best next evidence", 7.8, 4.13, 2.3, 0.28, size=16, color=GREEN, bold=True)
+    add_text(slide, "Next step", 7.8, 4.13, 2.3, 0.28, size=16, color=GREEN, bold=True)
     add_text(
         slide,
         (
@@ -1229,9 +1239,9 @@ def slide_10(prs: Presentation):
     add_text(
         slide,
         (
-            "AI assistance disclosed: Claude Code + Codex for pair programming and "
-            "review; claims verified through executed notebooks, hashes, tests and "
-            "container checks."
+            "AI coding assistants supported scaffolding, tests, documentation and "
+            "validation review; results were verified through executed notebooks, "
+            "hashes, tests and container checks."
         ),
         1.0,
         6.41,

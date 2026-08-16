@@ -267,14 +267,13 @@ data and parameter evidence in metadata.
 
 ## Use of AI assistance
 
-Claude Code was used as pair-programming assistant for scaffolding, implementation, tests,
-documentation, Docker/CI review and critique of the validation design. It was also used to
-explain data-leakage and cross-validation concepts and to challenge claims that
-were stronger than the evidence.
+AI coding assistants supported scaffolding, implementation, tests, documentation,
+Docker/CI review and critique of the validation design. They also helped explain
+data-leakage and cross-validation concepts and identify claims that needed stronger
+support.
 
 The final workflow, dataset assumption, protected-split policy, bounded search,
-model-selection rule, serving behaviour and limitations were reviewed against
-executed notebooks and automated checks. Generated suggestions were not treated as
-evidence: reported values come from the persisted metadata/evaluation files, the raw
-dataset is checksum-verified, notebooks execute end to end, and tests exercise the
-split, folds, API and packaging path.
+model-selection rule, serving behaviour and limitations were checked through
+executed notebooks and automated tests. Reported values come from the persisted
+metadata and evaluation files, the raw dataset is checksum-verified, and the tests
+exercise the split, folds, API and packaging path.
