@@ -1,4 +1,4 @@
-.PHONY: setup data train evaluate serve test lint slides package
+.PHONY: setup data train evaluate serve test lint slides package docker docker-run
 
 setup:            ## Create venv and install all dependency groups
 	uv sync --all-groups
@@ -22,8 +22,14 @@ lint:             ## Lint and format-check
 	uv run ruff check .
 	uv run ruff format --check .
 
-slides:           ## Build the presentation deck
+docker:           ## Build the serving image (trains the model during the build)
+	docker build -t house-price-predictor .
+
+docker-run:       ## Run the serving image on port 8000
+	docker run --rm -p 8000:8000 house-price-predictor
+
+slides: train evaluate  ## Rebuild evidence and the presentation deck
 	uv run --group slides python presentation/build_slides.py
 
-package:          ## Build the shareable zip
+package: slides   ## Build a source-and-presentation submission zip
 	uv run python scripts/package.py

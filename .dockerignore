@@ -1,0 +1,31 @@
+# The build only needs the package, the demo page and the lockfile. Everything
+# else either belongs to local development or is regenerated inside the image.
+
+.git/
+.github/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Regenerated during the build. Copying a local copy in would let a stale
+# model reach the image.
+data/
+models/
+
+# Not part of the running service.
+notebooks/
+presentation/
+docs/
+tests/
+Makefile
+*.zip
+dist/
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

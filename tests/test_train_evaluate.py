@@ -1,8 +1,4 @@
-"""End-to-end training and evaluation tests on the real dataset.
-
-These use a reduced set of models so the whole flow stays fast. The full
-comparison runs via ``make train``.
-"""
+"""End-to-end tests for grouped training, tuning, and final evaluation."""
 
 import json
 
@@ -10,26 +6,34 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.linear_model import Ridge
-from sklearn.model_selection import KFold, cross_val_predict
 
 from house_prices import config
 from house_prices.data import load_dataset
 from house_prices.evaluate import evaluate, load_artifact
-from house_prices.train import Candidate, select_model, split_data, train_and_persist
+from house_prices.train import (
+    Candidate,
+    default_candidates,
+    grouped_cv,
+    grouped_oof_predictions,
+    location_groups,
+    select_model,
+    split_data,
+    train_and_persist,
+)
 
 FAST_CANDIDATES = [
     Candidate(
         name="ridge",
-        estimator=Ridge(alpha=1.0),
+        estimator=Ridge(),
         scale=True,
         complexity=1,
-        purpose="Single fast candidate for the end-to-end test.",
+        purpose="Fast grouped-search candidate for the end-to-end test.",
+        param_grid={"alpha": (0.1, 1.0)},
     )
 ]
 
 
 def _comparison(rows: list[tuple]) -> pd.DataFrame:
-    """Build the frame select_model expects from (name, complexity, cv_rmse)."""
     return pd.DataFrame(
         [
             {"model": name, "complexity": complexity, "cv_rmse": cv_rmse}
@@ -38,33 +42,37 @@ def _comparison(rows: list[tuple]) -> pd.DataFrame:
     )
 
 
-def test_select_model_prefers_simpler_model_when_difference_is_small():
+def test_select_model_uses_lowest_rmse_even_when_difference_is_small():
     comparison = _comparison(
         [
             ("mean_baseline", 0, 13.6),
             ("simple", 1, 8.28),
-            ("complex", 4, 8.00),  # 3.5 percent better, inside the margin
+            ("complex", 4, 8.00),
         ]
     )
     chosen, reason = select_model(comparison)
-    assert chosen == "simple"
-    assert "simpler" in reason
-
-
-def test_select_model_keeps_complex_model_when_it_is_clearly_better():
-    comparison = _comparison(
-        [
-            ("mean_baseline", 0, 13.6),
-            ("simple", 1, 10.2),
-            ("complex", 4, 8.0),  # 27 percent better, outside the margin
-        ]
-    )
-    chosen, _ = select_model(comparison)
     assert chosen == "complex"
+    assert "lowest mean grouped-CV RMSE" in reason
+    assert "secondary properties" in reason
+
+
+def test_tree_candidates_avoid_redundant_transforms_and_scaling():
+    candidates = {candidate.name: candidate for candidate in default_candidates()}
+
+    for name in ("random_forest", "gradient_boosting"):
+        candidate = candidates[name]
+        assert candidate.scale is False
+        assert candidate.features == {"log_mrt_distance": False, "age_squared": False}
+        assert "scale" not in candidate.build().named_steps
+
+    ridge = candidates["ridge_engineered"]
+    assert ridge.scale is True
+    assert ridge.features == {"log_mrt_distance": True, "age_squared": True}
+    assert "scale" in ridge.build().named_steps
 
 
 def test_select_model_never_returns_the_baseline():
-    comparison = _comparison([("mean_baseline", 0, 8.0), ("simple", 1, 8.0)])
+    comparison = _comparison([("mean_baseline", 0, 8.0), ("simple", 1, 8.1)])
     assert select_model(comparison)[0] == "simple"
 
 
@@ -81,29 +89,50 @@ def trained_dir(dataset, tmp_path_factory):
 
 
 @pytest.mark.network
-def test_split_is_reproducible(dataset):
+def test_split_is_reproducible_location_disjoint_and_approximately_80_20(dataset):
     first = split_data(dataset)
     second = split_data(dataset)
-    assert first[0].index.equals(second[0].index)
-    assert first[1].index.equals(second[1].index)
+    X_train, X_holdout, _, _ = first
+
+    assert X_train.index.equals(second[0].index)
+    assert X_holdout.index.equals(second[1].index)
+    assert len(X_train) == 331
+    assert len(X_holdout) == 83
+
+    train_locations = set(X_train[["latitude", "longitude"]].itertuples(index=False, name=None))
+    holdout_locations = set(X_holdout[["latitude", "longitude"]].itertuples(index=False, name=None))
+    assert train_locations.isdisjoint(holdout_locations)
 
 
 @pytest.mark.network
-def test_training_writes_artifact_and_metadata(trained_dir):
+def test_every_grouped_cv_fold_keeps_coordinates_together(dataset):
+    X_train, _, y_train, _ = split_data(dataset)
+    groups = location_groups(X_train)
+    for train_indices, validation_indices in grouped_cv().split(X_train, y_train, groups):
+        assert set(groups[train_indices]).isdisjoint(groups[validation_indices])
+
+
+@pytest.mark.network
+def test_training_writes_grouped_tuning_metadata(trained_dir):
     assert (trained_dir / config.MODEL_FILENAME).exists()
     metadata = json.loads((trained_dir / config.METADATA_FILENAME).read_text())
     assert metadata["model"] == "ridge"
+    assert metadata["selection_metric"] == "grouped_cv_rmse"
+    assert metadata["best_params"]["alpha"] in {0.1, 1.0}
     assert metadata["cv_r2"] > 0.5
+    assert metadata["n_location_overlap"] == 0
+    assert metadata["n_training_locations"] + metadata["n_holdout_locations"] == 259
     assert len(metadata["cv_comparison"]) == len(FAST_CANDIDATES)
-    assert metadata["selection_reason"]
-    assert metadata["data_sha256"]
+    assert metadata["cv_comparison"][0]["tuning_configurations"] == 2
+    assert metadata["data_sha256"] == config.RAW_DATASET_SHA256
+    assert metadata["validation_diagnostics"]["largest_errors"]
 
 
 @pytest.mark.network
 def test_artifact_predicts_ordered_intervals(trained_dir, dataset):
     artifact = load_artifact(trained_dir)
-    _, X_test, _, _ = split_data(dataset)
-    point = artifact["point"].predict(X_test)
+    _, X_holdout, _, _ = split_data(dataset)
+    point = artifact["point"].predict(X_holdout)
     bounds = artifact["residual_bounds"]
 
     assert bounds["lower"] < bounds["upper"]
@@ -112,18 +141,11 @@ def test_artifact_predicts_ordered_intervals(trained_dir, dataset):
 
 
 @pytest.mark.network
-def test_stored_bounds_are_the_out_of_fold_residual_percentiles(trained_dir, dataset):
-    """Recomputing the out-of-fold residuals must reproduce the stored offsets.
-
-    Cross-validation is seeded, so this is deterministic. The test pins both the
-    values and the fact that they come from out-of-fold predictions rather than
-    from residuals on rows the model has already seen.
-    """
+def test_stored_bounds_are_grouped_out_of_fold_residual_percentiles(trained_dir, dataset):
     artifact = load_artifact(trained_dir)
     X_train, _, y_train, _ = split_data(dataset)
-
-    cv = KFold(n_splits=config.CV_FOLDS, shuffle=True, random_state=config.RANDOM_SEED)
-    out_of_fold = cross_val_predict(FAST_CANDIDATES[0].build(), X_train, y_train, cv=cv)
+    groups = location_groups(X_train)
+    out_of_fold = grouped_oof_predictions(artifact["point"], X_train, y_train, groups)
     residuals = y_train.to_numpy() - out_of_fold
     low_q, high_q = config.QUANTILES
 
@@ -134,16 +156,15 @@ def test_stored_bounds_are_the_out_of_fold_residual_percentiles(trained_dir, dat
 
 @pytest.mark.network
 def test_evaluation_applies_the_stored_offsets(trained_dir, dataset, tmp_path):
-    """Coverage must be measured against point + stored offsets, nothing else."""
     artifact = load_artifact(trained_dir)
-    _, X_test, _, y_test = split_data(dataset)
+    _, X_holdout, _, y_holdout = split_data(dataset)
     bounds = artifact["residual_bounds"]
-    predictions = artifact["point"].predict(X_test)
+    predictions = artifact["point"].predict(X_holdout)
 
     expected_coverage = float(
         (
-            (y_test.to_numpy() >= predictions + bounds["lower"])
-            & (y_test.to_numpy() <= predictions + bounds["upper"])
+            (y_holdout.to_numpy() >= predictions + bounds["lower"])
+            & (y_holdout.to_numpy() <= predictions + bounds["upper"])
         ).mean()
     )
     expected_width = float(bounds["upper"] - bounds["lower"])
@@ -151,18 +172,23 @@ def test_evaluation_applies_the_stored_offsets(trained_dir, dataset, tmp_path):
     results = evaluate(dataset, trained_dir, tmp_path)
     assert results["interval_coverage"] == pytest.approx(expected_coverage)
     assert results["interval_mean_width"] == pytest.approx(expected_width)
+    assert results["n_location_overlap"] == 0
 
 
 @pytest.mark.network
-def test_evaluation_metrics_and_figures(trained_dir, dataset, tmp_path):
+def test_evaluation_metrics_uncertainty_and_figures(trained_dir, dataset, tmp_path):
     results = evaluate(dataset, trained_dir, tmp_path)
-    assert results["r2"] > 0.5
-    assert results["rmse"] < 10
+    assert results["r2"] > 0.4
+    assert results["rmse"] < 12
+    assert results["n_holdout_rows"] == 83
     assert 0.5 < results["interval_coverage"] <= 1.0
+    lower, upper = results["rmse_bootstrap_95_ci"]
+    assert 0 < lower < results["rmse"] < upper
     for name in (
         "model_pred_vs_actual.png",
         "model_residuals.png",
         "model_permutation_importance.png",
+        "validation_error_by_target_band.png",
     ):
         assert (tmp_path / name).exists()
     assert (trained_dir / config.EVALUATION_FILENAME).exists()

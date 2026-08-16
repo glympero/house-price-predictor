@@ -4,7 +4,12 @@ import pandas as pd
 import pytest
 
 from house_prices import config
-from house_prices.data import load_dataset, validate_dataset
+from house_prices.data import (
+    dataset_sha256,
+    load_dataset,
+    validate_dataset,
+    verify_dataset_checksum,
+)
 
 
 @pytest.fixture
@@ -49,9 +54,19 @@ def test_validate_rejects_non_numeric(valid_frame):
         validate_dataset(valid_frame)
 
 
+def test_checksum_verification_rejects_a_different_file(tmp_path):
+    path = tmp_path / "unexpected.xlsx"
+    path.write_bytes(b"not the reviewed dataset")
+    with pytest.raises(RuntimeError, match="checksum mismatch"):
+        verify_dataset_checksum(path)
+
+
 @pytest.mark.network
 def test_load_dataset_end_to_end():
     df = load_dataset()
     assert df.shape == (414, 7)
     assert list(df.columns) == list(config.COLUMN_RENAMES.values())
     assert df[config.TARGET_COLUMN].between(0, 200).all()
+    assert dataset_sha256(config.RAW_DATA_DIR / config.RAW_DATASET_FILENAME) == (
+        config.RAW_DATASET_SHA256
+    )

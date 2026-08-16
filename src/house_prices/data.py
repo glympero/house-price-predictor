@@ -4,6 +4,7 @@ Downloads the UCI Real Estate Valuation dataset (a small xlsx inside a zip),
 caches it under ``data/raw/``, and loads it as a clean, validated DataFrame.
 """
 
+import hashlib
 import io
 import logging
 import urllib.request
@@ -17,10 +18,26 @@ from house_prices import config
 logger = logging.getLogger(__name__)
 
 
+def dataset_sha256(path: Path) -> str:
+    """Return the SHA-256 used to identify the pinned source dataset."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def verify_dataset_checksum(path: Path) -> None:
+    """Reject a cached or downloaded file that is not the reviewed dataset."""
+    actual = dataset_sha256(path)
+    if actual != config.RAW_DATASET_SHA256:
+        raise RuntimeError(
+            "Dataset checksum mismatch: "
+            f"expected {config.RAW_DATASET_SHA256}, got {actual} for {path}"
+        )
+
+
 def download_dataset(force: bool = False) -> Path:
     """Download and cache the raw dataset. Returns the cached xlsx path."""
     target = config.RAW_DATA_DIR / config.RAW_DATASET_FILENAME
     if target.exists() and not force:
+        verify_dataset_checksum(target)
         logger.info("Using cached dataset at %s", target)
         return target
 
@@ -36,6 +53,7 @@ def download_dataset(force: bool = False) -> Path:
 
     config.RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
+    verify_dataset_checksum(target)
     logger.info("Cached dataset at %s (%d bytes)", target, len(content))
     return target
 

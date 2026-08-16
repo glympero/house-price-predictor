@@ -1,0 +1,14 @@
+# One service, because that is all the solution needs. A database or a queue
+# would be invented complexity at this stage.
+#
+#   docker compose up --build
+#
+# Then open http://localhost:8000
+
+services:
+  api:
+    build: .
+    image: house-price-predictor
+    ports:
+      - "8000:8000"
+    restart: unless-stopped

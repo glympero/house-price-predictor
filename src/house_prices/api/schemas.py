@@ -63,12 +63,11 @@ class PredictionInterval(BaseModel):
     nominal_coverage: float = Field(
         description="Coverage the interval was designed for, as a fraction."
     )
-    exploratory_holdout_coverage: float | None = Field(
+    observed_holdout_coverage: float | None = Field(
         default=None,
         description=(
-            "Coverage measured on the 83-row holdout set. That set was inspected "
-            "during development, so this figure is exploratory and is not a "
-            "validated coverage guarantee."
+            "Coverage observed on the protected coordinate-disjoint holdout. "
+            "It is a finite-sample estimate, not a per-prediction guarantee."
         ),
     )
     caveat: str = Field(description="Plain statement of how far the interval can be trusted.")
@@ -94,6 +93,14 @@ class ModelInfoResponse(BaseModel):
     n_dataset_rows: int
     n_training_rows: int
     n_holdout_rows: int
+    n_dataset_locations: int
+    n_training_locations: int
+    n_holdout_locations: int
+    n_location_overlap: int
+    split_strategy: str
+    cv_strategy: str
+    best_params: dict
+    cv_train_rmse: float
     cv_rmse: float
     cv_mae: float
     cv_r2: float

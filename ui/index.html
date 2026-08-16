@@ -59,6 +59,41 @@
         cursor: pointer;
       }
       button:disabled { opacity: 0.6; cursor: default; }
+      [hidden] { display: none !important; }
+
+      .presets { margin-bottom: 1.3rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--line); }
+      .presets-label { font-size: 0.8125rem; font-weight: 600; color: var(--muted); margin-bottom: 0.55rem; }
+      .preset-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+      .preset {
+        margin: 0;
+        padding: 0.35rem 0.75rem;
+        background: #fff;
+        color: var(--accent);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 0.8125rem;
+      }
+      .preset:hover { border-color: var(--accent); }
+      .preset-note { margin-top: 0.65rem; font-size: 0.8125rem; color: var(--muted); min-height: 2.6em; }
+
+      pre {
+        background: #f4f6f9;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0.7rem 0.8rem;
+        overflow-x: auto;
+        font-size: 0.78rem;
+        line-height: 1.45;
+        margin: 0.35rem 0 0;
+      }
+      .json-label {
+        margin-top: 0.85rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
 
       #result, #refusal { display: none; margin-top: 1.75rem; }
       .result-label { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.02em;
@@ -108,6 +143,15 @@
       </p>
 
       <div class="panel">
+        <div class="presets">
+          <div class="presets-label">Try a scenario</div>
+          <div class="preset-row" id="presets"></div>
+          <div class="preset-note" id="preset-note">
+            Each scenario fills the form and calls the API, including one the
+            model refuses to answer.
+          </div>
+        </div>
+
         <form id="form">
           <div class="grid">
             <div>
@@ -179,6 +223,14 @@
           <summary>Model details</summary>
           <table id="model-table"></table>
         </details>
+
+        <details id="exchange" hidden>
+          <summary>Request and response</summary>
+          <div class="json-label">POST /predict</div>
+          <pre id="json-request"></pre>
+          <div class="json-label" id="json-response-label">Response</div>
+          <pre id="json-response"></pre>
+        </details>
       </div>
 
       <footer>
@@ -203,6 +255,36 @@
         longitude: "",
       };
       const PING_IN_M2 = 3.3;
+
+      // Scenarios that walk through what the service does, including the input
+      // it declines. Written as strict JSON so the tests can read them from
+      // here and check each one still behaves as described.
+      const PRESETS = [
+        {
+          "label": "Central, near a station",
+          "expect": "prediction",
+          "note": "The dense core, close to the MRT. This is where the highest prices in the dataset are.",
+          "values": { "house_age_years": 10, "mrt_distance_m": 250, "n_convenience_stores": 6, "latitude": 24.975, "longitude": 121.54 }
+        },
+        {
+          "label": "Older, far from the MRT",
+          "expect": "prediction",
+          "note": "The same model at the other end of its range. Note the range stays the same width, which is a known limitation.",
+          "values": { "house_age_years": 35, "mrt_distance_m": 4000, "n_convenience_stores": 0, "latitude": 24.95, "longitude": 121.5 }
+        },
+        {
+          "label": "At the edge of the data",
+          "expect": "prediction",
+          "note": "Exactly the oldest and most remote property the model was fitted on. Boundary values are answered, not refused.",
+          "values": { "house_age_years": 43.8, "mrt_distance_m": 6488.021, "n_convenience_stores": 0, "latitude": 24.94, "longitude": 121.48 }
+        },
+        {
+          "label": "Beyond what the model knows",
+          "expect": "refusal",
+          "note": "A 95 year old house is real, but nothing that old was in the training data. The service declines instead of extrapolating, and does not clip the input.",
+          "values": { "house_age_years": 95, "mrt_distance_m": 250, "n_convenience_stores": 6, "latitude": 24.975, "longitude": 121.54 }
+        }
+      ];
 
       let info = null;
 
@@ -239,21 +321,25 @@
         const rows = [
           ["Model", info.model_name],
           ["Why this model", info.selection_reason],
+          ["Best parameters", JSON.stringify(info.best_params)],
           ["Dataset rows", info.n_dataset_rows],
-          ["Fitted on", info.n_training_rows + " training rows"],
-          ["Holdout", info.n_holdout_rows + " rows, used once"],
-          ["CV RMSE", info.cv_rmse.toFixed(3)],
-          ["CV MAE", info.cv_mae.toFixed(3)],
-          ["CV R²", info.cv_r2.toFixed(3)],
+          ["Fitted on", info.n_training_rows + " rows across " + info.n_training_locations + " locations"],
+          ["Protected holdout", info.n_holdout_rows + " rows across " + info.n_holdout_locations + " unseen locations"],
+          ["Location overlap", info.n_location_overlap],
+          ["Validation", info.cv_strategy],
+          ["Training RMSE", info.cv_train_rmse.toFixed(3)],
+          ["Grouped CV RMSE", info.cv_rmse.toFixed(3)],
+          ["Grouped CV MAE", info.cv_mae.toFixed(3)],
+          ["Grouped CV R²", info.cv_r2.toFixed(3)],
           ["Holdout RMSE", holdout.rmse ? holdout.rmse.toFixed(3) : "n/a"],
           ["Holdout MAE", holdout.mae ? holdout.mae.toFixed(3) : "n/a"],
           ["Holdout R²", holdout.r2 ? holdout.r2.toFixed(3) : "n/a"],
           [
-            "Exploratory interval coverage",
+            "Observed interval coverage",
             holdout.interval_coverage
               ? (holdout.interval_coverage * 100).toFixed(0) +
-                "% on the holdout, which had already been inspected when the interval was " +
-                "revised, so this is exploratory rather than independently validated"
+                "% on the protected location-disjoint holdout; this finite sample is not " +
+                "a guarantee for an individual prediction"
               : "n/a",
           ],
           [
@@ -304,8 +390,16 @@
         document.getElementById("result").style.display = "none";
       }
 
-      document.getElementById("form").addEventListener("submit", async (event) => {
-        event.preventDefault();
+      // The exchange is shown because the API contract is part of what this
+      // page is demonstrating, and the refusal body is where the design is.
+      function showExchange(payload, status, body) {
+        document.getElementById("json-request").textContent = JSON.stringify(payload, null, 2);
+        document.getElementById("json-response-label").textContent = "Response " + status;
+        document.getElementById("json-response").textContent = JSON.stringify(body, null, 2);
+        document.getElementById("exchange").hidden = false;
+      }
+
+      async function runPrediction() {
         const button = document.getElementById("submit");
         const error = document.getElementById("error");
         button.disabled = true;
@@ -323,6 +417,7 @@
             body: JSON.stringify(payload),
           });
           const body = await response.json();
+          showExchange(payload, response.status, body);
 
           if (response.ok) {
             showPrediction(body);
@@ -338,8 +433,34 @@
         } finally {
           button.disabled = false;
         }
+      }
+
+      function applyPreset(preset) {
+        for (const [field, value] of Object.entries(preset.values)) {
+          document.getElementById(field).value = value;
+        }
+        document.getElementById("preset-note").textContent = preset.note;
+        runPrediction();
+      }
+
+      function renderPresets() {
+        const row = document.getElementById("presets");
+        for (const preset of PRESETS) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "preset";
+          button.textContent = preset.label;
+          button.addEventListener("click", () => applyPreset(preset));
+          row.appendChild(button);
+        }
+      }
+
+      document.getElementById("form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        runPrediction();
       });
 
+      renderPresets();
       loadModelInfo();
     </script>
   </body>

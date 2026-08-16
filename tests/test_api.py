@@ -3,7 +3,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from house_prices.api.main import app
+from house_prices.api.main import app, state
+from house_prices.data import load_dataset
+from house_prices.train import split_data
 
 VALID_REQUEST = {
     "house_age_years": 10.0,
@@ -26,6 +28,20 @@ def test_health_reports_a_loaded_model(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "model_loaded": True}
+
+
+@pytest.mark.network
+def test_readiness_requires_a_loaded_model(client):
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready", "model_loaded": True}
+
+    artifact = state.pop("artifact")
+    try:
+        response = client.get("/ready")
+        assert response.status_code == 503
+    finally:
+        state["artifact"] = artifact
 
 
 @pytest.mark.network
@@ -57,10 +73,12 @@ def test_serving_applies_the_stored_residual_offsets(client):
 
 
 @pytest.mark.network
-def test_coverage_is_reported_as_exploratory(client):
+def test_coverage_is_reported_as_finite_sample_holdout_evidence(client):
     interval = client.post("/predict", json=VALID_REQUEST).json()["interval"]
     assert interval["nominal_coverage"] == 0.9
-    assert "exploratory" in interval["caveat"]
+    assert interval["observed_holdout_coverage"] > 0
+    assert "coordinate-disjoint" in interval["caveat"]
+    assert "not a guarantee" in interval["caveat"]
     assert "same for every property" in interval["caveat"]
 
 
@@ -124,33 +142,47 @@ def test_model_info_exposes_provenance(client):
     assert body["model_name"]
     assert body["selection_reason"]
     assert len(body["data_sha256"]) == 64
-    assert "log10_mrt_distance" in body["features_used"]
+    assert set(body["features_used"]) == {
+        "house_age_years",
+        "mrt_distance_m",
+        "n_convenience_stores",
+        "latitude",
+        "longitude",
+    }
     assert body["residual_bounds"]["lower"] < body["residual_bounds"]["upper"]
+    assert body["split_strategy"] == "coordinate-group-disjoint holdout"
+    assert body["cv_strategy"] == "shuffled GroupKFold"
+    assert body["best_params"]
 
 
 @pytest.mark.network
-def test_model_info_separates_dataset_training_and_holdout_counts(client):
-    """The artifact is fitted on 331 rows, not on all 414."""
+def test_model_info_separates_rows_locations_and_has_no_overlap(client):
     body = client.get("/model/info").json()
     assert body["n_dataset_rows"] == 414
     assert body["n_training_rows"] == 331
     assert body["n_holdout_rows"] == 83
     assert body["n_training_rows"] + body["n_holdout_rows"] == body["n_dataset_rows"]
+    assert body["n_training_locations"] == 207
+    assert body["n_holdout_locations"] == 52
+    assert body["n_location_overlap"] == 0
 
 
 @pytest.mark.network
 def test_training_ranges_come_from_the_fitted_rows(client):
-    """Ranges must describe the 331 fitted rows, not the whole dataset."""
+    """Ranges must describe the grouped training rows, not the whole dataset."""
     ranges = client.get("/model/info").json()["training_feature_ranges"]
-    assert ranges["house_age_years"]["max"] == pytest.approx(43.8)
-    # The full dataset reaches 6488 m; the fitted rows stop short of that.
-    assert ranges["mrt_distance_m"]["max"] < 6488.0
+    X_train, _, _, _ = split_data(load_dataset())
+    for column in X_train.columns:
+        assert ranges[column]["min"] == pytest.approx(X_train[column].min())
+        assert ranges[column]["max"] == pytest.approx(X_train[column].max())
 
 
 @pytest.mark.network
-def test_model_info_reports_exploratory_holdout_metrics(client):
+def test_model_info_reports_protected_holdout_metrics(client):
     holdout = client.get("/model/info").json()["holdout"]
-    assert holdout["n_test_rows"] == 83
+    assert holdout["n_holdout_rows"] == 83
+    assert holdout["n_holdout_locations"] == 52
+    assert holdout["n_location_overlap"] == 0
     assert 0 < holdout["interval_coverage"] <= 1.0
     assert holdout["rmse"] > 0
 
@@ -167,4 +199,5 @@ def test_openapi_documents_the_endpoints(client):
     schema = client.get("/openapi.json").json()
     assert "/predict" in schema["paths"]
     assert "/health" in schema["paths"]
+    assert "/ready" in schema["paths"]
     assert "/model/info" in schema["paths"]

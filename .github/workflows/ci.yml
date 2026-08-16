@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Lint and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      # The trained model is a build output and is not committed, so the API
+      # tests have nothing to load until this runs. It also proves the training
+      # pipeline still works end to end on a machine with no local caches.
+      - name: Train the model
+        run: uv run python -m house_prices.train
+
+      - name: Evaluate on the holdout
+        run: uv run python -m house_prices.evaluate
+
+      - name: Run tests
+        run: uv run pytest
+
+  container:
+    name: Docker build and smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the image
+        run: docker build -t house-price-predictor .
+
+      - name: Start the container
+        run: docker run -d --name api -p 8000:8000 house-price-predictor
+
+      # Uvicorn needs a moment, and the model is loaded during startup.
+      - name: Wait for the service
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/ready; then exit 0; fi
+            sleep 2
+          done
+          echo "The service did not become healthy in time."
+          docker logs api
+          exit 1
+
+      # A running process is not the same as a working one. This checks that a
+      # real request returns a real prediction.
+      - name: Request a prediction
+        run: |
+          curl -sf -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"house_age_years":10,"mrt_distance_m":250,"n_convenience_stores":6,"latitude":24.975,"longitude":121.540}' \
+            | tee response.json
+          grep -q '"predicted_price"' response.json
+
+      # The image has to carry the holdout evaluation as well as the model.
+      # Without it the service reports null for its own accuracy.
+      - name: Check the image reports its holdout metrics
+        run: |
+          curl -sf http://localhost:8000/model/info | tee info.json
+          grep -q '"rmse"' info.json
+
+      # An input the model was never fitted on must be refused, not answered.
+      - name: Check an unsupported input is refused
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"house_age_years":95,"mrt_distance_m":250,"n_convenience_stores":6,"latitude":24.975,"longitude":121.540}')
+          test "$status" = "422"
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f api

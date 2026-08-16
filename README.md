@@ -1,130 +1,222 @@
+<!-- @format -->
+
 # House Price Predictor
 
-End-to-end regression solution that estimates price per unit area from location,
-age, and accessibility features. It covers data acquisition, exploratory
-analysis, model training and evaluation, and a production-style serving layer
-(FastAPI and a demo UI).
+End-to-end regression solution for an analyst who needs a consistent estimate of
+house price per unit area from age, accessibility and location. The repository
+covers source validation, training-only EDA, model comparison and bounded tuning,
+a protected final evaluation, a FastAPI service, demo UI, Docker image, CI checks,
+operating notes and an interview deck.
 
-The shipped model is a linear regression on features derived from the
-exploratory analysis. A random forest scored slightly better on cross-validation
-and was not selected; the reasoning is in "Modeling decisions" below.
+The selected model is a boundedly tuned histogram gradient-boosting regressor. It
+won on location-grouped cross-validation; linear regression remains the
+interpretable benchmark and the learning reference, not the model selected because
+it was more familiar.
 
-> **Status:** modeling and serving are complete. Containerization, CI, and the
-> presentation are the remaining pieces.
+Deeper write-ups live in `docs/`:
 
-## Dataset
+| document                                | purpose                                                       |
+| --------------------------------------- | ------------------------------------------------------------- |
+| [architecture.md](docs/architecture.md) | components, dependency direction, training and request flows  |
+| [decisions.md](docs/decisions.md)       | dataset, validation, model, feature and uncertainty decisions |
+| [monitoring.md](docs/monitoring.md)     | production signals, thresholds and retraining response        |
+
+## Dataset and source decision
 
 The project uses the [UCI Real Estate Valuation dataset](https://archive.ics.uci.edu/dataset/477/real+estate+valuation+data+set):
-414 housing transactions from Sindian District, New Taipei City, Taiwan,
-recorded in 2012 and 2013.
+414 transactions from Sindian District, New Taipei City, Taiwan, recorded in
+2012-2013.
 
-The dataset is not stored in the repo. The first time you run the code,
-`house_prices.data` downloads it from UCI and caches it under `data/`.
+The assignment names a "Real Estate Price Prediction Dataset" without a link.
+Choosing the Kaggle dataset with that matching name was a reasonable way to resolve
+the ambiguity: it is a republication of these records. For the reproducible
+implementation, the code downloads from UCI, the original publisher, without an
+account. The exact expected XLSX is pinned by SHA-256:
 
-### Assumption: which dataset this is
+```text
+597d72fcc6c0539e6035a033ddb387db48fff3fb1f3c98fee31fe081c64a9059
+```
 
-The brief specifies "Real Estate Price Prediction Dataset" without a link, so
-identifying it is an assumption and is recorded here rather than left implicit.
+Both a cached file and a new download are rejected if the checksum differs. This
+makes the source assumption explicit and prevents a silently changed file from
+altering the evidence.
 
-There is a Kaggle dataset published under exactly that title, and it is a
-re-publication of the UCI "Real Estate Valuation" dataset used here. The brief
-names the other case's data the same way ("Telco Customer Churn Dataset"),
-referring to a well-known public dataset by its common title, so the same
-pattern applies. UCI was chosen as the source because it is the original
-publisher and can be downloaded without an account, which keeps the project
-reproducible for anyone cloning it.
-
-Two consequences of that identification are worth stating up front.
-
-The data is Taiwanese, so it uses local conventions: prices in New Taiwan
-Dollars and floor area in ping. See the price unit note below.
-
-The brief describes predicting price "based on features like location, size,
-and amenities". This dataset provides location (coordinates and distance to the
-nearest MRT station) and amenities (nearby convenience stores), but no size
-feature, because the target is already expressed per unit of floor area. If a
-different dataset was intended, the modelling approach would carry over but
-floor area would likely become the strongest single predictor.
+The target is already price **per unit area**, so the dataset has no floor-area
+feature. It provides coordinates, MRT distance and nearby convenience stores. If
+the brief intended a different dataset containing size, the same workflow would
+apply, but the input schema and trained artifact would have to change.
 
 ## Quick start
 
-Requires [uv](https://docs.astral.sh/uv/). These commands work on any platform:
+### Docker
 
 ```bash
-uv sync                                   # create venv and install dependencies
-uv run python -m house_prices.train       # download data, compare models, save the artifact
-uv run python -m house_prices.evaluate    # score the selected model on the holdout set
-uv run uvicorn house_prices.api.main:app  # serve the API and demo UI on port 8000
-uv run pytest                             # run the tests
+docker compose up --build
 ```
 
-There is a `Makefile` wrapping the same commands (`make train`, `make serve`,
-`make test`, `make lint`). It is a convenience for machines that have `make`,
-which does not include a default Windows install. Nothing in the project
-depends on it.
+Open <http://localhost:8000>. The image downloads the pinned dataset and trains
+during the build, so the first build needs network access; the running service does
+not.
 
-## Modeling decisions
+### Local development
 
-The dataset holds 414 transactions: 331 were used to fit the model and 83 were
-held out and used once, at the end. Every step below was measured with the same
-5-fold cross-validation on the 331 training rows.
+Requires [uv](https://docs.astral.sh/uv/):
 
-| Step | CV RMSE | Why |
-|---|---:|---|
-| Mean baseline | 13.642 | minimum useful bar |
-| Raw linear regression | 9.161 | simple interpretable benchmark |
-| + log(MRT distance) | 8.435 | EDA showed a curved distance effect |
-| + age² | 8.276 | EDA showed a U-shaped age effect |
-| Ridge | 8.269 | test regularization on the engineered features |
-| Random Forest | 7.995 | nonlinear benchmark |
-| Gradient Boosting | 8.147 | second nonlinear benchmark |
+```bash
+uv sync
+uv run python -m house_prices.train
+uv run python -m house_prices.evaluate
+uv run uvicorn house_prices.api.main:app
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+```
 
-1. The mean baseline established the floor.
-2. Raw linear regression gave the interpretable benchmark.
-3. `log(MRT distance)` improved CV RMSE after the EDA showed a curved distance
-   effect.
-4. `age²` improved it further after the EDA showed a U-shaped age relationship.
-5. Ridge and Lasso added little predictive value. Lasso set `longitude` to zero,
-   which is consistent with the redundancy between location features seen in the
-   EDA.
-6. A distance-from-center feature was tested and rejected: 8.276 to 8.278 for the
-   linear model, and 7.995 to 8.038 for the forest. It is a deterministic
-   function of latitude and longitude, which the model already has.
-7. Random Forest achieved the best mean CV RMSE. The engineered linear model was
-   selected for this prototype because its performance was close and it is
-   simpler and more interpretable.
-8. `transaction_date` slightly improved validation performance, by about 0.16
-   RMSE, but was excluded because its historical meaning does not transfer safely
-   to present-day inference.
+The artifact is a generated build output and is not committed. Run training before
+starting the API on a fresh clone. Equivalent `make train`, `make evaluate`,
+`make test`, `make lint`, `make slides` and `make package` targets are provided.
+`make package` creates `dist/house-price-predictor-submission.zip` and excludes
+caches, local data, models, environment files and repository metadata.
 
-The largest gains came from the EDA-driven feature engineering, not from
-regularization or from changing model family.
+## Project structure
 
-Holdout result, reported after selection and not used to compare models:
-RMSE 6.80, MAE 4.84, R² 0.724.
+```text
+src/house_prices/
+  config.py          paths, seed, split and checksum constants
+  data.py            download, cache, schema and checksum validation
+  features.py        leak-safe feature transformer for linear candidates
+  train.py           grouped split/CV, bounded search, diagnostics, persistence
+  evaluate.py        protected-holdout metrics, bootstrap interval and figures
+  package.py         clean submission archive
+  api/               FastAPI lifecycle, schemas and endpoints
+notebooks/
+  01_eda.ipynb       detailed EDA on training rows only
+  02_modeling.ipynb  reproducible comparison, selection and final evaluation
+  03_gradient_descent_reference.ipynb
+                     educational cost bowl, slopes, learning rates and contours
+tests/               unit, integration, API, UI and packaging checks
+ui/index.html        single-file analyst demo
+docs/                architecture, decisions, monitoring and generated figures
+presentation/        reproducible deck generator and slides.pptx
+```
 
-### Findings from building the service
+## Evidence protocol
 
-- API boundary testing exposed unsafe polynomial extrapolation from the `age²`
-  term.
-- Serving now rejects inputs outside the fitted model support instead of
-  returning an implausible number.
-- Uncertainty was simplified to out-of-fold residual quantiles from the selected
-  model, replacing two separate quantile models.
-- The 2012 to 2013 historical limitation is shown to users in the demo UI.
+This is a supervised batch regression task: historical rows contain inputs and a
+continuous target, and the application predicts that target for a new property.
 
-## API
+The protocol is fixed in code:
 
-Start the service with the `uvicorn` command above. The demo page is at `/` and
-the generated OpenAPI documentation at `/docs`.
+1. Split 414 rows into 331 training rows and 83 protected holdout rows.
+2. Keep every exact latitude/longitude pair in one partition. This yields 207
+   training locations, 52 holdout locations and zero coordinate overlap.
+3. Restrict detailed, target-aware EDA and every feature/model decision to the 331
+   training rows.
+4. Compare candidates on the same shuffled 5-fold `GroupKFold`, again grouping
+   exact coordinates.
+5. Run small, predefined grids for Ridge, random forest and histogram gradient
+   boosting. The grids and winning parameters are stored in `metadata.json`.
+6. Select the non-baseline candidate with the lowest mean grouped-CV RMSE, refit it
+   on all 331 training rows, and freeze it.
+7. Score that exact artifact once on the protected 83-row, 52-location holdout.
 
-| endpoint           | purpose                                                    |
-| ------------------ | ---------------------------------------------------------- |
-| `POST /predict`    | price estimate, prediction interval, and any input warnings |
-| `GET /health`      | liveness, and whether a model is loaded                     |
-| `GET /model/info`  | which model is serving, its metrics, and its data hash      |
+This is an approximately 80/20 split. Grouping makes it slightly harder and more
+realistic than a random row split: repeated transactions at the same coordinates
+cannot make validation look easier by appearing on both sides.
 
-Linux and macOS:
+### Model comparison
+
+All values below come from the same grouped training folds. Training RMSE is shown
+to expose the generalization gap rather than rewarding a model for fitting its own
+rows.
+
+| candidate                       | train RMSE | grouped-CV RMSE | grouped-CV MAE | reason tested                                   |
+| ------------------------------- | ---------: | --------------: | -------------: | ----------------------------------------------- |
+| Mean baseline                   |      12.89 |           12.90 |          10.41 | minimum useful bar                              |
+| Raw linear regression           |       8.27 |            8.53 |           6.36 | simplest interpretable model                    |
+| Engineered linear regression    |       7.36 |            7.74 |           5.66 | log-distance and age curve hypotheses           |
+| Ridge, alpha 10                 |       7.49 |            7.64 |           5.45 | shrink correlated location coefficients         |
+| Random forest                   |       4.54 |            7.17 |           5.11 | nonlinear interactions                          |
+| **Histogram gradient boosting** |   **4.36** |        **6.94** |       **5.07** | second nonlinear family; lowest grouped-CV RMSE |
+
+Selected parameters are `learning_rate=0.10`, `max_leaf_nodes=7`,
+`min_samples_leaf=20`, and `l2_regularization=0`. The 4.36-to-6.94 training/CV
+gap is an overfitting diagnostic and is disclosed, even though this candidate has
+the best validation result.
+
+### Feature engineering and scaling
+
+Training-only EDA showed that raw MRT distance has a curved relationship with
+price. For the linear benchmark, `log10(MRT distance)` improves grouped-CV RMSE
+from 8.53 to 7.76. Adding age squared changes it only from 7.76 to 7.74, so that
+second feature has weak evidence. Ridge then improves the engineered linear model
+to 7.64. A distance-from-centre feature was tested and rejected because its 0.02
+RMSE change was negligible beside fold variation.
+
+`StandardScaler` is fitted **inside** each linear/Ridge pipeline and therefore only
+on each fold's training portion. Scaling is important for regularization and stable
+coefficient optimization. It does not make a tree ensemble better: trees split on
+ordered thresholds, so monotonic log/square transforms add no split information.
+The selected boosting pipeline consequently uses the five raw serving inputs and no
+scaler; its transform ablation produced identical scores.
+
+The correlations in the EDA are Pearson associations, not causal effects. For
+example, price correlates negatively with MRT distance and positively with stores
+and latitude, while MRT distance and longitude also correlate strongly with each
+other. That overlap is why a coefficient cannot be interpreted as the isolated
+effect of changing one location variable. Correlation guides hypotheses; grouped
+validation decides whether a transformation predicts better.
+
+### Protected holdout result
+
+After model and parameters were frozen:
+
+| metric                                       |        result |
+| -------------------------------------------- | ------------: |
+| RMSE                                         |         10.48 |
+| 2,000-sample bootstrap 95% interval for RMSE | 5.54 to 16.15 |
+| MAE                                          |          5.90 |
+| R²                                           |         0.569 |
+| observed 90% interval coverage               |         91.6% |
+
+The final RMSE is worse than grouped CV. One rare holdout sale has an actual value
+of 117.5 and a prediction near 40.1, an absolute error around 77.4. This makes the
+RMSE/MAE difference large and exposes weak performance at the expensive tail.
+Training-only out-of-fold diagnostics already show the same pattern: high-target
+RMSE is 9.32 versus 5.58 and 5.40 in the lower bands.
+
+The holdout result is reported as a limitation; it is not used to reopen tuning or
+choose another model. With only 83 rows, the wide bootstrap interval is the honest
+statement of uncertainty.
+
+## Gradient-descent interview reference
+
+[`03_gradient_descent_reference.ipynb`](notebooks/03_gradient_descent_reference.ipynb)
+fits a one-feature linear example using a manual gradient-descent loop on training
+rows only. It shows:
+
+- the prediction, squared-error cost and partial derivatives for `w` and `b`;
+- why the gradient points uphill and the update subtracts it;
+- slow, suitable and excessive learning rates;
+- the same convex cost surface as a 3D bowl and a contour map;
+- agreement between the manual optimum and scikit-learn.
+
+It is deliberately labelled educational. Manual gradient descent did not train the
+deployed tree model, and scikit-learn's `LinearRegression` uses a direct least-squares
+solver.
+
+## API and analyst demo
+
+The demo is at `/` and OpenAPI documentation at `/docs`.
+
+| endpoint          | purpose                                                     |
+| ----------------- | ----------------------------------------------------------- |
+| `POST /predict`   | point estimate, residual-based interval and warnings        |
+| `GET /health`     | liveness only; succeeds if the process is running           |
+| `GET /ready`      | readiness; returns 503 until the model is loaded            |
+| `GET /model/info` | selected model, parameters, evidence protocol and data hash |
+
+Example:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/predict \
@@ -132,62 +224,57 @@ curl -s -X POST http://127.0.0.1:8000/predict \
   -d '{"house_age_years":10,"mrt_distance_m":250,"n_convenience_stores":6,"latitude":24.975,"longitude":121.540}'
 ```
 
-Windows PowerShell. Use `curl.exe`, because `curl` there is an alias for
-`Invoke-WebRequest` and takes different arguments:
+The price unit is **10,000 New Taiwan Dollars per ping**; one ping is about 3.3
+m². The API returns the unit explicitly and the UI also provides a per-square-metre
+conversion. It predicts price density, not total property price.
 
-```powershell
-curl.exe -s -X POST http://127.0.0.1:8000/predict -H "Content-Type: application/json" -d '{"house_age_years":10,"mrt_distance_m":250,"n_convenience_stores":6,"latitude":24.975,"longitude":121.540}'
-```
+Inputs outside the ranges fitted on the 331 training rows receive HTTP 422 with an
+`outside_model_support` error. Values are not silently clipped.
 
-### A note on the price unit
+### Prediction interval
 
-The target is not the price of a house. It is a price per unit of floor area,
-and the unit is the one the dataset uses: **10,000 New Taiwan Dollars per
-ping**. A ping (坪) is the traditional property measure in Taiwan and equals
-about 3.3 m².
+The 5th and 95th percentiles of the selected model's location-grouped out-of-fold
+residuals are stored as offsets (currently about -9.16 and +11.91). This keeps the
+point and interval tied to one model. The protected holdout's 91.6% observed
+coverage is a finite-sample final diagnostic, not a guarantee for an individual
+property or a different market. The fixed-width interval is a known limitation.
 
-A predicted value of `47.2` therefore reads as:
+## Deployment and verification
 
-| interpretation                        | value                    |
-| ------------------------------------- | ------------------------ |
-| in the dataset's unit                 | 47.2                     |
-| New Taiwan Dollars per ping           | 472,000 TWD              |
-| New Taiwan Dollars per square metre   | about 143,000 TWD        |
-| a 30 ping apartment (about 99 m²)     | about 14.2 million TWD   |
+The locked Python 3.12 slim image trains from the checksum-verified source, runs as
+a non-root user and checks `/ready`. Runtime model and data paths are configurable
+with `HOUSE_PRICES_MODELS_DIR`, `HOUSE_PRICES_DATA_DIR`,
+`HOUSE_PRICES_REPORTS_DIR`, `HOUSE_PRICES_UI_FILE`, or the common
+`HOUSE_PRICES_ROOT`.
 
-The unit is kept as the dataset defines it, because that is what the model
-predicts and what every metric in this repository is expressed in. The API
-returns it with an explicit `price_unit` field, and the demo UI converts it to
-per square metre so a reader unfamiliar with the unit is not left guessing.
+CI performs Ruff checks, training, the complete test suite, an image build, a
+readiness check and a real prediction. A committed `.joblib` could silently drift
+from the code that created it, so the artifact is rebuilt instead and records code,
+data and parameter evidence in metadata.
 
-This also explains why there is no feature for the size of the property. The
-target has already been divided by floor area, so the model estimates how
-expensive a square of space is at a given location, age and accessibility,
-rather than what a particular house costs.
+## Limitations
 
-### Inputs outside the model's support
+- Only 414 historical transactions from one Taiwanese district and period.
+- The 83-row protected holdout gives an imprecise final estimate and contains one
+  influential expensive sale.
+- No mechanism for current market inflation or temporal drift; transaction date is
+  excluded because its 2012-2013 meaning does not transfer safely.
+- Exact-coordinate grouping is a practical leakage guard, not proof of geographic
+  generalization to another district.
+- Prediction intervals have fixed width and observed, not guaranteed, coverage.
+- This prototype has documented monitoring and rollback inputs but no live feedback
+  store, model registry, authentication, rate limiting or multi-version rollout.
 
-The service does not extrapolate. If any input falls outside the range the model
-was fitted on, the request is refused with 422 and an `outside_model_support`
-error naming each offending field and its supported range. The input is not
-clipped to the nearest supported value, because that would answer a question
-about a different property.
+## Use of AI assistance
 
-Values that are impossible, or outside the district the model describes, are
-rejected by schema validation before the model is reached.
+Claude Code was used as pair-programming assistant for scaffolding, implementation, tests,
+documentation, Docker/CI review and critique of the validation design. It was also used to
+explain data-leakage and cross-validation concepts and to challenge claims that
+were stronger than the evidence.
 
-### The prediction interval
-
-The range is derived from the residual distribution of the selected model,
-measured out of fold on the training data. The 5th and 95th percentiles of those
-residuals are stored as offsets and applied to every prediction. They are not
-symmetric (-10.6 and +11.8), so the range is not centred on the estimate.
-
-The response reports the nominal 90% target and the coverage measured on the
-holdout set, which was 92%. That measurement is **exploratory**: the same 83-row
-holdout was inspected during development, so it is not an untouched sample and
-the figure is not a validated coverage guarantee. Establishing one would require
-a separate set that has never been examined.
-
-Known limitation: the offsets are constant, so every property receives the same
-interval width, and the range does not widen for inputs the model finds unusual.
+The final workflow, dataset assumption, protected-split policy, bounded search,
+model-selection rule, serving behaviour and limitations were reviewed against
+executed notebooks and automated checks. Generated suggestions were not treated as
+evidence: reported values come from the persisted metadata/evaluation files, the raw
+dataset is checksum-verified, notebooks execute end to end, and tests exercise the
+split, folds, API and packaging path.

@@ -11,7 +11,6 @@ impossible to import without a trained artifact on disk.
 import json
 import logging
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -30,8 +29,6 @@ from house_prices.evaluate import load_artifact
 
 logger = logging.getLogger(__name__)
 
-UI_FILE = config.REPO_ROOT / "ui" / "index.html"
-
 state: dict = {}
 
 
@@ -44,14 +41,14 @@ def _load_evaluation() -> dict | None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    state.clear()
     try:
         state["artifact"] = load_artifact(config.MODELS_DIR)
         state["evaluation"] = _load_evaluation()
         logger.info("Loaded model %s", state["artifact"]["metadata"]["model"])
     except FileNotFoundError:
-        # Serving without a model is allowed so that /health can report the
-        # problem instead of the process failing to start.
-        logger.warning("No model artifact found. /predict will return 503.")
+        # Liveness remains available, while /ready and /predict return 503.
+        logger.warning("No model artifact found. /ready and /predict will return 503.")
     yield
     state.clear()
 
@@ -62,7 +59,7 @@ app = FastAPI(
         "Estimates house price of unit area for properties in Sindian District, "
         "New Taipei City, from a model trained on 2012 and 2013 transactions."
     ),
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -123,6 +120,12 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", model_loaded="artifact" in state)
 
 
+@app.get("/ready", response_model=HealthResponse, tags=["operations"])
+def ready() -> HealthResponse:
+    _require_artifact()
+    return HealthResponse(status="ready", model_loaded=True)
+
+
 @app.get("/model/info", response_model=ModelInfoResponse, tags=["operations"])
 def model_info() -> ModelInfoResponse:
     artifact = _require_artifact()
@@ -135,6 +138,14 @@ def model_info() -> ModelInfoResponse:
         n_dataset_rows=metadata["n_dataset_rows"],
         n_training_rows=metadata["n_training_rows"],
         n_holdout_rows=metadata["n_holdout_rows"],
+        n_dataset_locations=metadata["n_dataset_locations"],
+        n_training_locations=metadata["n_training_locations"],
+        n_holdout_locations=metadata["n_holdout_locations"],
+        n_location_overlap=metadata["n_location_overlap"],
+        split_strategy=metadata["split_strategy"],
+        cv_strategy=metadata["cv_strategy"],
+        best_params=metadata["best_params"],
+        cv_train_rmse=metadata["cv_train_rmse"],
         cv_rmse=metadata["cv_rmse"],
         cv_mae=metadata["cv_mae"],
         cv_r2=metadata["cv_r2"],
@@ -166,17 +177,18 @@ def predict(request: PredictionRequest) -> PredictionResponse:
 
     nominal = round(float(config.QUANTILES[1] - config.QUANTILES[0]), 4)
     evaluation = state.get("evaluation") or {}
-    exploratory = evaluation.get("interval_coverage")
+    observed = evaluation.get("interval_coverage")
 
     caveat = (
         f"The range is derived from the residual distribution of the selected model, "
         f"targeting {nominal:.0%} coverage."
     )
-    if exploratory is not None:
+    if observed is not None:
+        holdout_rows = evaluation.get("n_holdout_rows", metadata["n_holdout_rows"])
         caveat += (
-            f" Coverage of {exploratory:.0%} was measured on the 83-row holdout, which was "
-            f"already inspected during development, so treat that figure as exploratory "
-            f"rather than as a validated guarantee."
+            f" Coverage of {observed:.0%} was observed on the protected, "
+            f"coordinate-disjoint {holdout_rows}-row holdout. That is a finite-sample "
+            f"estimate, not a guarantee for an individual prediction."
         )
     caveat += " The width is the same for every property and does not widen for unusual inputs."
 
@@ -187,7 +199,7 @@ def predict(request: PredictionRequest) -> PredictionResponse:
             lower=round(lower, 1),
             upper=round(upper, 1),
             nominal_coverage=nominal,
-            exploratory_holdout_coverage=exploratory,
+            observed_holdout_coverage=observed,
             caveat=caveat,
         ),
         model_name=metadata["model"],
@@ -197,6 +209,6 @@ def predict(request: PredictionRequest) -> PredictionResponse:
 
 @app.get("/", include_in_schema=False)
 def demo_ui() -> FileResponse:
-    if not Path(UI_FILE).exists():
+    if not config.UI_FILE.exists():
         raise HTTPException(status_code=404, detail="Demo UI not found.")
-    return FileResponse(UI_FILE)
+    return FileResponse(config.UI_FILE)

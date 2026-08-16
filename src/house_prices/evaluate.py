@@ -1,8 +1,8 @@
-"""Evaluation of the persisted model on the holdout test set.
+"""One final evaluation of the persisted model on the protected holdout.
 
 Run as ``python -m house_prices.evaluate`` after training. Produces the
-final metrics (RMSE, MAE, R², interval coverage), the diagnostic figures,
-and ``models/evaluation.json``.
+final metrics (RMSE, MAE, R², interval coverage), a bootstrap RMSE interval,
+diagnostic figures, and ``models/evaluation.json``.
 """
 
 import json
@@ -14,6 +14,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
@@ -33,7 +34,7 @@ def load_artifact(models_dir: Path) -> dict:
 
 
 def evaluate(df: pd.DataFrame, models_dir: Path, figures_dir: Path) -> dict:
-    """Score the artifact on the holdout set and write metrics + figures."""
+    """Score the frozen artifact on the coordinate-disjoint holdout."""
     artifact = load_artifact(models_dir)
     _, X_test, _, y_test = split_data(df)
 
@@ -42,10 +43,16 @@ def evaluate(df: pd.DataFrame, models_dir: Path, figures_dir: Path) -> dict:
     lower = predictions + bounds["lower"]
     upper = predictions + bounds["upper"]
 
+    rmse_interval = _bootstrap_rmse_interval(y_test.to_numpy(), predictions)
+    metadata = artifact["metadata"]
     results = {
         "model": artifact["metadata"]["model"],
-        "n_test_rows": int(len(y_test)),
+        "evaluation_type": "protected coordinate-group-disjoint holdout",
+        "n_holdout_rows": int(len(y_test)),
+        "n_holdout_locations": int(metadata["n_holdout_locations"]),
+        "n_location_overlap": int(metadata["n_location_overlap"]),
         "rmse": float(root_mean_squared_error(y_test, predictions)),
+        "rmse_bootstrap_95_ci": rmse_interval,
         "mae": float(mean_absolute_error(y_test, predictions)),
         "r2": float(r2_score(y_test, predictions)),
         "interval_coverage": float(((y_test >= lower) & (y_test <= upper)).mean()),
@@ -64,9 +71,27 @@ def evaluate(df: pd.DataFrame, models_dir: Path, figures_dir: Path) -> dict:
     _plot_predictions(y_test, predictions, figures_dir)
     _plot_residuals(y_test, predictions, figures_dir)
     _plot_importance(artifact["point"], X_test, y_test, figures_dir)
+    _plot_validation_segments(metadata["validation_diagnostics"], figures_dir)
 
-    (models_dir / config.EVALUATION_FILENAME).write_text(json.dumps(results, indent=2))
+    (models_dir / config.EVALUATION_FILENAME).write_text(
+        json.dumps(results, indent=2), encoding="utf-8"
+    )
     return results
+
+
+def _bootstrap_rmse_interval(
+    y_true: np.ndarray,
+    predictions: np.ndarray,
+    *,
+    repetitions: int = 2000,
+) -> list[float]:
+    """Deterministic row-bootstrap interval for the holdout RMSE."""
+    squared_errors = (y_true - predictions) ** 2
+    rng = np.random.default_rng(config.RANDOM_SEED)
+    indices = rng.integers(0, len(y_true), size=(repetitions, len(y_true)))
+    bootstrapped = np.sqrt(squared_errors[indices].mean(axis=1))
+    lower, upper = np.percentile(bootstrapped, [2.5, 97.5])
+    return [float(lower), float(upper)]
 
 
 def _plot_predictions(y_test, predictions, figures_dir: Path) -> None:
@@ -74,7 +99,11 @@ def _plot_predictions(y_test, predictions, figures_dir: Path) -> None:
     ax.scatter(y_test, predictions, s=22, alpha=0.6)
     lims = [min(y_test.min(), predictions.min()), max(y_test.max(), predictions.max())]
     ax.plot(lims, lims, "--", color="gray", label="perfect prediction")
-    ax.set(xlabel="actual price", ylabel="predicted price", title="Holdout: predicted vs actual")
+    ax.set(
+        xlabel="actual price per unit area",
+        ylabel="predicted price per unit area",
+        title="Protected location holdout: predicted vs actual",
+    )
     ax.legend()
     fig.savefig(figures_dir / "model_pred_vs_actual.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -88,7 +117,7 @@ def _plot_residuals(y_test, predictions, figures_dir: Path) -> None:
     ax.set(
         xlabel="predicted price",
         ylabel="residual (actual minus predicted)",
-        title="Holdout residuals",
+        title="Protected location holdout: residuals",
     )
     fig.savefig(figures_dir / "model_residuals.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -113,9 +142,35 @@ def _plot_importance(pipeline, X_test, y_test, figures_dir: Path) -> None:
     )
     ax.set(
         xlabel="RMSE increase when the feature is shuffled",
-        title="Permutation importance on the holdout set",
+        title="Permutation importance on the protected holdout",
     )
     fig.savefig(figures_dir / "model_permutation_importance.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_validation_segments(diagnostics: dict, figures_dir: Path) -> None:
+    rows = diagnostics["by_target_band"]
+    labels = [row["segment"] for row in rows]
+    rmse = [row["rmse"] for row in rows]
+    mae = [row["mae"] for row in rows]
+    positions = np.arange(len(labels))
+    width = 0.34
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.5))
+    ax.bar(positions - width / 2, rmse, width, label="RMSE", color="#087E8B")
+    ax.bar(positions + width / 2, mae, width, label="MAE", color="#FF5A5F")
+    ax.set_xticks(positions, labels)
+    ax.set(
+        xlabel="actual-price band",
+        ylabel="error (10,000 TWD per ping)",
+        title="Grouped out-of-fold error by target band",
+    )
+    ax.legend()
+    fig.savefig(
+        figures_dir / "validation_error_by_target_band.png",
+        dpi=150,
+        bbox_inches="tight",
+    )
     plt.close(fig)
 
 
