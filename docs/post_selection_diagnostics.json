@@ -1,0 +1,234 @@
+{
+  "purpose": "Post-selection robustness diagnostic; it does not reopen selection.",
+  "protected_holdout_used_for_nested_cv": false,
+  "random_seed": 42,
+  "development_rows": 331,
+  "development_locations": 207,
+  "outer_cv": "shuffled 5-fold GroupKFold by exact coordinate",
+  "inner_cv": "shuffled 5-fold GroupKFold by exact coordinate",
+  "score_definition": "unweighted mean of outer-fold RMSE values",
+  "model_comparison": [
+    {
+      "candidate": "mean_baseline",
+      "grid_cells": 1,
+      "reported_cv_rmse": 12.895040999462974,
+      "nested_cv_rmse": 12.895040999462974,
+      "optimism": 0.0,
+      "nested_cv_fold_sd": 1.6059235554138855,
+      "outer_fold_rmse": [
+        13.313901783090268,
+        10.940275996783397,
+        15.71614443555534,
+        12.491092440104433,
+        12.013790341781444
+      ],
+      "best_params_by_outer_fold": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "candidate": "linear_regression",
+      "grid_cells": 1,
+      "reported_cv_rmse": 8.533826826401375,
+      "nested_cv_rmse": 8.533826826401375,
+      "optimism": 0.0,
+      "nested_cv_fold_sd": 1.5565721787989364,
+      "outer_fold_rmse": [
+        10.006852679010906,
+        6.204056867724065,
+        10.365205699640834,
+        8.63304438389121,
+        7.459974501739857
+      ],
+      "best_params_by_outer_fold": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "candidate": "linear_engineered",
+      "grid_cells": 1,
+      "reported_cv_rmse": 7.7407876090104155,
+      "nested_cv_rmse": 7.7407876090104155,
+      "optimism": 0.0,
+      "nested_cv_fold_sd": 1.336939524155566,
+      "outer_fold_rmse": [
+        9.074529891113837,
+        6.086680349567515,
+        9.29540456762968,
+        7.912196427608922,
+        6.335126809132129
+      ],
+      "best_params_by_outer_fold": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "candidate": "ridge_engineered",
+      "grid_cells": 6,
+      "reported_cv_rmse": 7.638378667604532,
+      "nested_cv_rmse": 7.744222920402585,
+      "optimism": 0.10584425279805298,
+      "nested_cv_fold_sd": 1.383806716585005,
+      "outer_fold_rmse": [
+        9.114379554765517,
+        6.084963136004915,
+        9.372179773952654,
+        7.910746059012674,
+        6.238846078277164
+      ],
+      "best_params_by_outer_fold": [
+        {
+          "alpha": 1.0
+        },
+        {
+          "alpha": 0.01
+        },
+        {
+          "alpha": 1.0
+        },
+        {
+          "alpha": 0.01
+        },
+        {
+          "alpha": 10.0
+        }
+      ]
+    },
+    {
+      "candidate": "random_forest",
+      "grid_cells": 18,
+      "reported_cv_rmse": 7.166761448543764,
+      "nested_cv_rmse": 7.261084271029165,
+      "optimism": 0.09432282248540069,
+      "nested_cv_fold_sd": 1.3666856950689652,
+      "outer_fold_rmse": [
+        9.363353318525721,
+        5.972206185050721,
+        8.232967348936866,
+        6.968550851499565,
+        5.768343651132949
+      ],
+      "best_params_by_outer_fold": [
+        {
+          "max_depth": 8,
+          "max_features": 0.7,
+          "min_samples_leaf": 1
+        },
+        {
+          "max_depth": null,
+          "max_features": 0.7,
+          "min_samples_leaf": 3
+        },
+        {
+          "max_depth": null,
+          "max_features": 0.7,
+          "min_samples_leaf": 3
+        },
+        {
+          "max_depth": 8,
+          "max_features": 0.7,
+          "min_samples_leaf": 3
+        },
+        {
+          "max_depth": null,
+          "max_features": 0.7,
+          "min_samples_leaf": 5
+        }
+      ]
+    },
+    {
+      "candidate": "gradient_boosting",
+      "grid_cells": 36,
+      "reported_cv_rmse": 6.9404748793276685,
+      "nested_cv_rmse": 7.40418391347486,
+      "optimism": 0.46370903414719145,
+      "nested_cv_fold_sd": 1.318690614725679,
+      "outer_fold_rmse": [
+        9.33222407512199,
+        5.7583839429715935,
+        8.400140532763881,
+        7.244619213220378,
+        6.2855518032964595
+      ],
+      "best_params_by_outer_fold": [
+        {
+          "l2_regularization": 0.0,
+          "learning_rate": 0.03,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 0.0,
+          "learning_rate": 0.1,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 20
+        },
+        {
+          "l2_regularization": 0.0,
+          "learning_rate": 0.03,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 10
+        },
+        {
+          "l2_regularization": 0.0,
+          "learning_rate": 0.1,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 30
+        },
+        {
+          "l2_regularization": 0.0,
+          "learning_rate": 0.03,
+          "max_leaf_nodes": 7,
+          "min_samples_leaf": 10
+        }
+      ]
+    }
+  ],
+  "nonlinear_pair": {
+    "random_forest_minus_histogram_boosting_mean_rmse": -0.14309964244569517,
+    "random_forest_lower_rmse_outer_folds": 3,
+    "histogram_boosting_lower_rmse_outer_folds": 2,
+    "interpretation": "Random forest has the lower mean in this deterministic run, but the 0.14 RMSE gap and 3-to-2 fold split do not separate the families."
+  },
+  "protected_holdout_sensitivity": {
+    "official_rmse": 10.479015588309922,
+    "rmse_without_largest_error": 6.1701622619923855,
+    "rmse_without_three_largest_errors": 5.764958519350382,
+    "largest_error_share_of_total_squared_error": 0.6574784050932175,
+    "three_largest_errors_share_of_total_squared_error": 0.7082819543755332,
+    "largest_error": {
+      "source_row_id": "271",
+      "actual": 117.5,
+      "predicted": 40.089427548430535,
+      "residual_actual_minus_predicted": 77.41057245156946
+    },
+    "development_target_max": 78.3,
+    "holdout_target_max": 117.5,
+    "row_bootstrap_rmse_95_interval": [
+      5.5440147270980615,
+      16.148817896544852
+    ],
+    "row_bootstrap_rmse_95_interval_without_largest_error": [
+      5.299497334374654,
+      7.0390345852042735
+    ],
+    "old_random_row_split": {
+      "largest_target_was_in_training": true,
+      "training_target_max": 117.5,
+      "holdout_target_max": 63.3
+    },
+    "interpretation": "Sensitivity analysis only. All 83 valid rows remain in the official protected-holdout metrics."
+  }
+}

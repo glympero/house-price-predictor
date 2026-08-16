@@ -1,4 +1,4 @@
-.PHONY: setup data train evaluate serve test lint slides package docker docker-run
+.PHONY: setup data train evaluate diagnostics serve test lint slides package docker docker-run
 
 setup:            ## Create venv and install all dependency groups
 	uv sync --all-groups
@@ -11,6 +11,9 @@ train:            ## Train candidate models, select winner, persist artifact
 
 evaluate:         ## Evaluate persisted model on the holdout set
 	uv run python -m house_prices.evaluate
+
+diagnostics:        ## Reproduce post-selection nested-CV and holdout sensitivity evidence
+	uv run python scripts/post_selection_diagnostics.py
 
 serve:            ## Run the API + demo UI locally
 	uv run uvicorn house_prices.api.main:app --reload --port 8000

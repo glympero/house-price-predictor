@@ -114,6 +114,23 @@ leaf nodes, learning rate 0.10, minimum 20 samples per leaf and L2 0.
 
 This is tuning with an explicit capacity budget, not opposition to tuning.
 
+### Post-selection robustness diagnostic
+
+The best grid cell is selected on the same folds used to report its grouped-CV
+score. That is valid for the predefined development-time choice, but the reported
+minimum is an optimistic estimate of the selected tuning procedure.
+
+A later grouped nested-CV diagnostic kept the protected holdout out of both loops.
+Random forest had mean outer-fold RMSE 7.26 and histogram boosting 7.40. The 0.14
+difference is small: the forest was lower on three outer folds and boosting on two.
+The result therefore reduces confidence in the original ordering rather than proving
+that either nonlinear family is better.
+
+The shipped artifact is not changed by this post-selection analysis. A fresh
+iteration should predeclare nested model-family comparison and reserve new protected
+evidence. Exact fold results and selected inner parameters are recorded in
+[`post_selection_diagnostics.json`](post_selection_diagnostics.json).
+
 ## 7. Feature engineering and scaling are model-specific
 
 For the linear candidate, log MRT distance reduces grouped-CV RMSE from 8.53 to
@@ -143,8 +160,10 @@ prediction time and a time-based validation design.
 
 No row is removed merely because its target is large. The protected holdout contains
 a 117.5 transaction predicted near 40.1. That roughly 77.4 absolute error drives the
-final RMSE to 10.48 while MAE is 5.90. It may be a legitimate rare sale, and deleting
-it after seeing the error would contaminate the test.
+final RMSE to 10.48 while MAE is 5.90 and accounts for 65.7% of total squared error.
+RMSE is 6.17 without it and 5.77 without the three largest errors, but those are
+sensitivity diagnostics rather than replacement scores. It may be a legitimate rare
+sale, and deleting it after seeing the error would contaminate the test.
 
 Training-only grouped OOF error was already higher in the expensive target band
 (RMSE 9.32 versus 5.58 and 5.40 in the other bands). The final row confirms a known

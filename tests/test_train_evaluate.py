@@ -5,6 +5,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from scripts.post_selection_diagnostics import run_nested_cv_comparison
 from sklearn.linear_model import Ridge
 
 from house_prices import config
@@ -74,6 +75,24 @@ def test_tree_candidates_avoid_redundant_transforms_and_scaling():
 def test_select_model_never_returns_the_baseline():
     comparison = _comparison([("mean_baseline", 0, 8.0), ("simple", 1, 8.1)])
     assert select_model(comparison)[0] == "simple"
+
+
+def test_nested_cv_reports_outer_scores_without_changing_selection_data(dataset):
+    X_train, _, y_train, _ = split_data(dataset)
+    groups = location_groups(X_train)
+    rows = run_nested_cv_comparison(
+        X_train,
+        y_train,
+        candidates=FAST_CANDIDATES,
+        groups=groups,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["candidate"] == "ridge"
+    assert rows[0]["grid_cells"] == 2
+    assert len(rows[0]["outer_fold_rmse"]) == config.CV_FOLDS
+    assert len(rows[0]["best_params_by_outer_fold"]) == config.CV_FOLDS
+    assert rows[0]["nested_cv_rmse"] > 0
 
 
 @pytest.fixture(scope="module")

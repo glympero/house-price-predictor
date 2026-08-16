@@ -92,9 +92,10 @@ after a minimum sample count and show confidence intervals:
 
 The training-only warning to preserve is expensive-tail performance: grouped OOF
 RMSE is 9.32 in the high target band versus about 5.4-5.6 elsewhere. The protected
-117.5 sale produces a roughly 77.4 absolute error. Monitoring should therefore avoid
-letting a healthy mid-market average hide systematic underprediction of expensive
-properties.
+117.5 sale produces a roughly 77.4 absolute error and contributes 65.7% of protected
+total squared error. That concentration is a warning about both tail performance and
+small-sample metric instability. Monitoring should therefore avoid letting a healthy
+mid-market average hide systematic underprediction of expensive properties.
 
 ## Alert and response policy
 

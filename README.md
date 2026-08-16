@@ -144,6 +144,54 @@ Selected parameters are `learning_rate=0.10`, `max_leaf_nodes=7`,
 gap is an overfitting diagnostic and is disclosed, even though this candidate has
 the best validation result.
 
+#### Selection caveat: the tuned scores carry search optimism
+
+The grouped-CV column above is valid for the predefined development-time selection
+rule, but it is not an unbiased estimate of each selected tuning procedure's future
+error.
+
+Each tuned candidate is scored at its best grid cell, chosen on the same folds
+that produced the score. A larger search has more opportunities to fit fold-specific
+noise, although grid cells are correlated and the nominal cell count is not a count
+of independent attempts. This is selection optimism inside development data, not
+protected-holdout leakage.
+
+A deterministic grouped nested-CV diagnostic estimates its size. The grid search
+runs inside each outer training fold and the score comes from an outer fold that
+search never saw. The protected holdout is not involved.
+
+| candidate                    | grid cells | reported CV | nested CV | optimism |
+| ---------------------------- | ---------: | ----------: | --------: | -------: |
+| Mean baseline                |          1 |       12.90 |     12.90 |    +0.00 |
+| Raw linear regression        |          1 |        8.53 |      8.53 |    +0.00 |
+| Engineered linear regression |          1 |        7.74 |      7.74 |    +0.00 |
+| Ridge                        |          6 |        7.64 |      7.74 |    +0.11 |
+| Random forest                |         18 |        7.17 |      7.26 |    +0.09 |
+| Histogram gradient boosting  |         36 |        6.94 |      7.40 |    +0.46 |
+
+The untuned candidates are unchanged by construction. The 36-cell boosting search
+has the largest observed gap, but the gaps are not strictly monotonic in grid size:
+Ridge's +0.11 is slightly larger than the forest's +0.09. Grid breadth is therefore
+a plausible contributor, not a proven single cause. Ridge's apparent edge over the
+engineered linear model also disappears at the displayed precision.
+
+**In this one five-fold nested run, the point ranking changes.** Random forest has
+mean outer-fold RMSE 7.26 and histogram boosting 7.40. The difference is only 0.14;
+the forest is lower on three outer folds and boosting on two. This does not establish
+that random forest is intrinsically better. It shows that the original reported lead
+from 6.94 to 7.17 is not robust enough to separate the nonlinear families.
+
+The shipped model was not changed. This diagnostic was run after the original rule
+had selected the model and after its holdout result was known, so it is recorded as
+post-selection sensitivity analysis rather than used for retroactive reselection. A
+fresh iteration should predeclare the grouped nested comparison, select a final
+procedure, and reserve new protected evidence for its final estimate.
+
+The exact folds, per-fold parameters and sensitivity calculations are persisted in
+the [post-selection diagnostic JSON](docs/post_selection_diagnostics.json) and can be
+reproduced with [`scripts/post_selection_diagnostics.py`](scripts/post_selection_diagnostics.py)
+or `make diagnostics`.
+
 ### Feature engineering and scaling
 
 Training-only EDA showed that raw MRT distance has a curved relationship with
@@ -184,6 +232,29 @@ of 117.5 and a prediction near 40.1, an absolute error around 77.4. This makes t
 RMSE/MAE difference large and exposes weak performance at the expensive tail.
 Training-only out-of-fold diagnostics already show the same pattern: high-target
 RMSE is 9.32 versus 5.58 and 5.40 in the lower bands.
+
+That single row dominates the estimate:
+
+| holdout RMSE                | value |
+| --------------------------- | ----: |
+| all 83 rows                 | 10.48 |
+| excluding the 117.5 sale    |  6.17 |
+| excluding the worst 3 rows  |  5.77 |
+
+One row of 83 accounts for **65.7% of the total squared error** (about 66%). Without
+it, the holdout sensitivity RMSE is lower than the reported grouped-CV result. This
+is not an argument that the model is fine and it is not a replacement score. It is a
+principal reason the row-bootstrap interval runs from 5.54 to 16.15; without that
+row, the same sensitivity calculation is approximately 5.30 to 7.04. More
+representative expensive-property data is needed to estimate tail performance
+precisely.
+
+Two further facts belong with it. The training rows top out at 78.3, so this sale
+is above anything the model saw in the target. And under the earlier random-row
+split that transaction fell in training while its holdout topped out at 63.3. Those
+facts are consistent with the coordinate-grouped holdout being harder and more
+honest. They do not causally decompose the change from the historical 6.8 result,
+because the partition and selected model both changed.
 
 The holdout result is reported as a limitation; it is not used to reopen tuning or
 choose another model. With only 83 rows, the wide bootstrap interval is the honest
@@ -256,7 +327,11 @@ data and parameter evidence in metadata.
 
 - Only 414 historical transactions from one Taiwanese district and period.
 - The 83-row protected holdout gives an imprecise final estimate and contains one
-  influential expensive sale.
+  influential expensive sale that is 65.7% of the total squared error.
+- Candidates were compared at their best grid cell on shared folds, so the tuned
+  scores carry search optimism. One post-selection nested run gives random forest a
+  0.14 lower mean RMSE, but the two nonlinear families are not separated by this
+  evidence.
 - No mechanism for current market inflation or temporal drift; transaction date is
   excluded because its 2012-2013 meaning does not transfer safely.
 - Exact-coordinate grouping is a practical leakage guard, not proof of geographic
