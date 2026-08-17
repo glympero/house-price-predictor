@@ -8,10 +8,12 @@ covers source validation, training-only EDA, model comparison and bounded tuning
 a protected final evaluation, a FastAPI service, demo UI, Docker image, CI checks,
 operating notes and an interview deck.
 
-The selected model is a boundedly tuned histogram gradient-boosting regressor. It
-won on location-grouped cross-validation; linear regression remains the
-interpretable benchmark and the learning reference, not the model selected because
-it was more familiar.
+The frozen model is a boundedly tuned histogram gradient-boosting regressor,
+selected by the original predeclared location-grouped cross-validation rule. Linear
+regression remains an interpretable benchmark. A later nested-CV sensitivity
+analysis did not clearly separate histogram boosting from random forest; that
+post-selection result is disclosed below rather than used to rewrite the frozen
+decision.
 
 Deeper write-ups live in `docs/`:
 

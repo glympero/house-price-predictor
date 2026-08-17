@@ -52,11 +52,11 @@ not be mixed.
 
 ## 4. Detailed EDA stays on training rows
 
-The original notebook explored all rows, an approach seen in some educational
-end-to-end examples. That is acceptable for schema/quality inspection but not for
-target-aware exploration if the same rows will later be called an untouched test
-set. The revised notebook shows full-data shape only, then computes distributions,
-correlations, transformations and outlier views on 331 training rows.
+The original notebook explored all rows. That is acceptable for schema and quality
+inspection but not for target-aware exploration if the same rows will later be
+treated as an untouched test set. The revised notebook shows full-data shape only,
+then computes distributions, correlations, transformations and outlier views on
+331 training rows.
 
 Pearson correlations are treated as hypothesis generators:
 
@@ -71,13 +71,13 @@ Pearson correlations are treated as hypothesis generators:
 The prediction experiment, not the correlation table, decides whether a feature is
 retained.
 
-## 5. Linear regression is a benchmark, not a familiarity-based choice
+## 5. Linear regression is an interpretable benchmark
 
 Linear regression belongs early in the sequence because it is inexpensive,
 inspectable and provides a strong diagnostic baseline. It also makes feature scaling,
-coefficients, cost and gradient descent easy to explain. Those are valid reasons to
-include it, but familiarity with a course is not a valid reason to ship it over a
-candidate with better validation evidence.
+coefficients, cost and gradient descent directly inspectable. Those are valid reasons
+to include it as a benchmark; final selection follows the predeclared validation
+metric rather than a preference for a particular model family.
 
 The predefined selection rule is simple: exclude the mean baseline and choose the
 lowest mean location-grouped CV RMSE. On the current training data:
@@ -90,9 +90,10 @@ lowest mean location-grouped CV RMSE. On the current training data:
 | random forest | 4.54 | 7.17 | 5.11 |
 | **histogram gradient boosting** | **4.36** | **6.94** | **5.07** |
 
-Histogram gradient boosting therefore ships. Interpretability is addressed through
-training-only error slices, permutation importance with caveats, model metadata and a
-linear learning reference; it does not override the primary evidence.
+Under the original selection procedure, histogram gradient boosting is therefore
+frozen for the shipped artifact. Interpretability is addressed through training-only
+error slices, permutation importance with caveats, model metadata and an independent
+gradient-descent verification; it does not replace the predeclared selection rule.
 
 ## 6. Hyperparameters are tuned, but the search is bounded
 

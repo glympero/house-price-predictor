@@ -5,8 +5,8 @@ Run as ``python -m house_prices.train`` (or ``make train``). The flow is:
 1. Reserve an approximately 20% holdout made of complete coordinate groups.
 2. Compare and tune candidates with shared five-fold ``GroupKFold`` splits on
    the remaining rows only.
-3. Select the lowest mean grouped-CV RMSE without a familiarity or simplicity
-   override.
+3. Apply the predeclared rule: select the non-baseline candidate with the lowest
+   mean grouped-CV RMSE.
 4. Refit the selected configuration on all training groups, derive empirical
    residual offsets from grouped out-of-fold predictions, and persist one
    pipeline artifact.
