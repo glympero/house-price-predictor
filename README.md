@@ -63,18 +63,37 @@ not.
 Requires [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv sync
+uv sync --all-groups
+uv run python -m ipykernel install --user --name house-prices --display-name "Python (house-prices)"
+```
+
+The second command registers the project virtual environment as the
+`Python (house-prices)` Jupyter kernel requested by all three notebooks. Run it
+once after cloning, after moving the repository, or after recreating `.venv`.
+It works on Windows, macOS and Linux; the registration made on one computer is
+local to that computer and is deliberately not committed.
+
+Open the notebooks from the project environment with:
+
+```bash
+uv run jupyter lab
+```
+
+For the application and repository checks:
+
+```bash
 uv run python -m house_prices.train
 uv run python -m house_prices.evaluate
 uv run uvicorn house_prices.api.main:app
-uv run pytest
+uv run python -m pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
 
 The artifact is a generated build output and is not committed. Run training before
-starting the API on a fresh clone. Equivalent `make train`, `make evaluate`,
-`make test`, `make lint`, `make slides` and `make package` targets are provided.
+starting the API on a fresh clone. Equivalent `make setup`, `make notebook`,
+`make train`, `make evaluate`, `make test`, `make lint`, `make slides` and
+`make package` targets are provided.
 `make package` creates `dist/house-price-predictor-submission.zip` and excludes
 caches, local data, models, environment files and repository metadata.
 
@@ -93,7 +112,7 @@ notebooks/
   01_eda.ipynb       detailed EDA on training rows only
   02_modeling.ipynb  reproducible comparison, selection and final evaluation
   03_gradient_descent_reference.ipynb
-                     educational cost bowl, slopes, learning rates and contours
+                     manual one-feature fit checked against scikit-learn
 tests/               unit, integration, API, UI and packaging checks
 ui/index.html        single-file analyst demo
 docs/                architecture, decisions, monitoring and generated figures
@@ -227,11 +246,18 @@ After model and parameters were frozen:
 | R²                                           |         0.569 |
 | observed 90% interval coverage               |         91.6% |
 
+RMSE and MAE use the target unit, where one unit is 10,000 TWD per ping. RMSE
+10.48 is therefore a large-error-weighted scale of **104,800 TWD per ping**; it is
+not the average miss. MAE 5.90 says the average absolute miss is **59,000 TWD per
+ping**. R² 0.569 is not 56.9% accuracy: it means 56.9% less squared error than
+predicting the protected-set mean for every row.
+
 The final RMSE is worse than grouped CV. One rare holdout sale has an actual value
-of 117.5 and a prediction near 40.1, an absolute error around 77.4. This makes the
-RMSE/MAE difference large and exposes weak performance at the expensive tail.
-Training-only out-of-fold diagnostics already show the same pattern: high-target
-RMSE is 9.32 versus 5.58 and 5.40 in the lower bands.
+of 117.5 (1,175,000 TWD per ping) and a prediction near 40.1 (401,000 TWD per
+ping), an absolute error around 77.4 (774,000 TWD per ping). This makes the RMSE/MAE
+difference large and exposes weak performance at the expensive tail. Training-only
+out-of-fold diagnostics already show the same pattern: high-target RMSE is 9.32
+versus 5.58 and 5.40 in the lower bands.
 
 That single row dominates the estimate:
 
@@ -260,21 +286,19 @@ The holdout result is reported as a limitation; it is not used to reopen tuning 
 choose another model. With only 83 rows, the wide bootstrap interval is the honest
 statement of uncertainty.
 
-## Gradient-descent interview reference
+## Gradient-descent implementation check
 
 [`03_gradient_descent_reference.ipynb`](notebooks/03_gradient_descent_reference.ipynb)
-fits a one-feature linear example using a manual gradient-descent loop on training
-rows only. It shows:
+fits the same standardized log-MRT one-feature problem in two ways on the 331
+training rows. Manual gradient descent returns `w=-9.2234, b=37.6697`; scikit-learn
+returns `w=-9.2234, b=37.6698`. That agreement checks the hand-written cost,
+gradients and update loop against a trusted least-squares implementation. The
+figure also shows how the learning rate changes convergence on this objective.
 
-- the prediction, squared-error cost and partial derivatives for `w` and `b`;
-- why the gradient points uphill and the update subtracts it;
-- slow, suitable and excessive learning rates;
-- the same convex cost surface as a 3D bowl and a contour map;
-- agreement between the manual optimum and scikit-learn.
-
-It is deliberately labelled educational. Manual gradient descent did not train the
-deployed tree model, and scikit-learn's `LinearRegression` uses a direct least-squares
-solver.
+This is a deliberately simplified implementation check, not another model-selection
+result. The complete candidates are compared with grouped cross-validation in
+`02_modeling.ipynb`; manual gradient descent did not train the deployed histogram
+boosting model.
 
 ## API and analyst demo
 

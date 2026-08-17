@@ -40,12 +40,14 @@ RED_LIGHT = RGBColor(0xFC, 0xE8, 0xE8)
 GREEN = RGBColor(0x2D, 0x8A, 0x5E)
 
 
-def load_results() -> tuple[dict, dict]:
+def load_results() -> tuple[dict, dict, dict]:
     metadata_path = config.MODELS_DIR / config.METADATA_FILENAME
     evaluation_path = config.MODELS_DIR / config.EVALUATION_FILENAME
+    diagnostics_path = config.REPO_ROOT / "docs" / "post_selection_diagnostics.json"
     return (
         json.loads(metadata_path.read_text(encoding="utf-8")),
         json.loads(evaluation_path.read_text(encoding="utf-8")),
+        json.loads(diagnostics_path.read_text(encoding="utf-8")),
     )
 
 
@@ -250,6 +252,10 @@ def model_row(metadata: dict, name: str) -> dict:
     return next(row for row in metadata["cv_comparison"] if row["model"] == name)
 
 
+def diagnostic_row(diagnostics: dict, name: str) -> dict:
+    return next(row for row in diagnostics["model_comparison"] if row["candidate"] == name)
+
+
 def slide_1(prs: Presentation, metadata: dict, evaluation: dict):
     slide = blank_slide(prs, NAVY)
     add_rect(slide, 0, 0, 0.16, SLIDE_H, fill=TEAL, line=None, radius=False)
@@ -297,7 +303,7 @@ def slide_1(prs: Presentation, metadata: dict, evaluation: dict):
     )
     add_text(
         slide,
-        "Lowest grouped-CV RMSE after bounded tuning",
+        "Selected under the predefined grouped-CV rule",
         7.82,
         2.2,
         4.1,
@@ -307,7 +313,7 @@ def slide_1(prs: Presentation, metadata: dict, evaluation: dict):
     )
 
     values = [
-        ("GROUPED CV", f"{metadata['cv_rmse']:.2f}", "RMSE · training evidence", BLUE),
+        ("GROUPED CV", f"{metadata['cv_rmse']:.2f}", "RMSE · original selection", BLUE),
         ("PROTECTED TEST", f"{evaluation['rmse']:.2f}", "RMSE · 83 unseen rows", ORANGE),
         ("LOCATION OVERLAP", str(metadata["n_location_overlap"]), "exact coordinates", TEAL),
     ]
@@ -638,9 +644,20 @@ def slide_4(prs: Presentation):
     )
 
 
-def slide_5(prs: Presentation, metadata: dict):
+def slide_5(prs: Presentation, metadata: dict, diagnostics: dict):
     slide = blank_slide(prs)
-    add_header(slide, "Grouped validation selects histogram boosting", "Model evidence", 5)
+    add_header(
+        slide,
+        "Original selection favored boosting; nested CV narrows the claim",
+        "Model evidence",
+        5,
+    )
+
+    reported_forest = model_row(metadata, "random_forest")
+    reported_boosting = model_row(metadata, "gradient_boosting")
+    nested_forest = diagnostic_row(diagnostics, "random_forest")
+    nested_boosting = diagnostic_row(diagnostics, "gradient_boosting")
+    nonlinear_pair = diagnostics["nonlinear_pair"]
 
     names = [
         ("mean_baseline", "Mean"),
@@ -654,7 +671,7 @@ def slide_5(prs: Presentation, metadata: dict):
     chart_data = ChartData()
     chart_data.categories = [label for _, label in names]
     chart_data.add_series("Train RMSE", [row["cv_train_rmse"] for row in rows])
-    chart_data.add_series("Grouped-CV RMSE", [row["cv_rmse"] for row in rows])
+    chart_data.add_series("Reported grouped-CV RMSE", [row["cv_rmse"] for row in rows])
     chart = slide.shapes.add_chart(
         XL_CHART_TYPE.COLUMN_CLUSTERED,
         Inches(0.65),
@@ -689,11 +706,21 @@ def slide_5(prs: Presentation, metadata: dict):
     plot.data_labels.font.size = Pt(8.5)
 
     add_rect(slide, 9.05, 1.55, 3.62, 3.15, fill=NAVY, line=None)
-    add_label(slide, "Winner", 9.42, 1.9, 1.15, fill=NAVY_2, color=TEAL)
-    add_text(slide, "6.94", 9.42, 2.38, 1.8, 0.65, size=37, color=WHITE, bold=True)
+    add_label(slide, "Original rule", 9.42, 1.9, 1.55, fill=NAVY_2, color=TEAL)
     add_text(
         slide,
-        "grouped-CV RMSE",
+        f"{reported_boosting['cv_rmse']:.2f}",
+        9.42,
+        2.38,
+        1.8,
+        0.65,
+        size=37,
+        color=WHITE,
+        bold=True,
+    )
+    add_text(
+        slide,
+        "boosting reported CV",
         10.58,
         2.68,
         1.55,
@@ -703,44 +730,72 @@ def slide_5(prs: Presentation, metadata: dict):
     )
     add_text(
         slide,
-        "7 leaves · LR 0.10\nmin leaf 20 · L2 0",
+        (f"Boosting {reported_boosting['cv_rmse']:.2f} · Forest {reported_forest['cv_rmse']:.2f}"),
         9.42,
         3.32,
         2.8,
-        0.65,
-        size=12.5,
+        0.3,
+        size=13,
         color=WHITE,
         bold=True,
     )
     add_text(
         slide,
-        "36 predefined configurations",
+        "36-cell vs 18-cell grid · frozen before test",
         9.42,
-        4.1,
+        3.82,
         2.8,
-        0.2,
+        0.4,
         size=9.5,
         color=RGBColor(0xB7, 0xC4, 0xD4),
     )
 
     add_rect(slide, 9.05, 4.94, 3.62, 1.56, fill=ORANGE_LIGHT, line=ORANGE)
-    add_text(slide, "Generalization gap", 9.35, 5.2, 2.7, 0.25, size=12, color=INK, bold=True)
     add_text(
-        slide, "4.36 train  →  6.94 CV", 9.35, 5.6, 2.8, 0.28, size=17, color=ORANGE, bold=True
+        slide,
+        "Post-selection nested CV",
+        9.35,
+        5.16,
+        2.9,
+        0.25,
+        size=11.5,
+        color=INK,
+        bold=True,
     )
     add_text(
         slide,
-        "The gap indicates some overfitting",
+        (
+            f"Forest {nested_forest['nested_cv_rmse']:.2f} · "
+            f"Boosting {nested_boosting['nested_cv_rmse']:.2f}"
+        ),
         9.35,
-        6.02,
+        5.52,
+        2.95,
+        0.28,
+        size=14.5,
+        color=ORANGE,
+        bold=True,
+    )
+    add_text(
+        slide,
+        (
+            f"{abs(nonlinear_pair['random_forest_minus_histogram_boosting_mean_rmse']):.2f} "
+            "gap · 3–2 folds · no clear winner"
+        ),
+        9.35,
+        5.98,
         2.8,
-        0.2,
+        0.3,
         size=9.5,
         color=MUTED,
     )
 
     add_footer(
-        slide, "Primary rule: lowest non-baseline grouped-CV RMSE; protected holdout unavailable"
+        slide,
+        (
+            "The holdout stayed out of nested CV; this diagnostic discloses uncertainty "
+            "without reopening selection"
+        ),
     )
 
 
@@ -818,43 +873,70 @@ def slide_6(prs: Presentation):
 
     add_rect(slide, 8.15, 1.5, 4.48, 4.54, fill=WHITE)
     add_picture_contain(
-        slide, config.REPORTS_DIR / "gradient_descent_reference.png", 8.35, 1.7, 4.08, 3.15
+        slide, config.REPORTS_DIR / "gradient_descent_reference.png", 8.35, 1.72, 4.08, 2.85
     )
-    add_label(
-        slide, "Optional technical deep dive", 8.48, 1.72, 2.15, fill=ORANGE_LIGHT, color=ORANGE
-    )
+    add_label(slide, "Implementation check", 8.48, 1.72, 1.85, fill=ORANGE_LIGHT, color=ORANGE)
     add_text(
         slide,
-        "Manual GD notebook: slopes, learning rate, bowl and contours",
+        "Manual GD and scikit-learn converge to the same fit",
         8.48,
-        5.0,
+        4.72,
         3.75,
-        0.45,
+        0.42,
         size=12.5,
         bold=True,
         align=PP_ALIGN.CENTER,
     )
     add_text(
         slide,
-        "Educational only—manual GD did not train the tree ensemble.",
+        "manual   w = -9.2234  ·  b = 37.6697",
         8.48,
-        5.5,
+        5.18,
         3.75,
-        0.24,
-        size=9.5,
+        0.22,
+        size=10.5,
+        color=BLUE,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
+    add_text(
+        slide,
+        "sklearn  w = -9.2234  ·  b = 37.6698",
+        8.48,
+        5.48,
+        3.75,
+        0.22,
+        size=10.5,
+        color=TEAL,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
+    add_text(
+        slide,
+        "331 training rows · standardized log-MRT · agreement within 0.0001",
+        8.48,
+        5.78,
+        3.75,
+        0.2,
+        size=8.5,
         color=MUTED,
         align=PP_ALIGN.CENTER,
     )
 
     add_footer(
         slide,
-        "Linear concepts explain the benchmark; grouped CV selects the production model",
+        (
+            "One-feature linear verification only; the frozen histogram-boosting model "
+            "was trained separately"
+        ),
     )
 
 
-def slide_7(prs: Presentation, evaluation: dict):
+def slide_7(prs: Presentation, evaluation: dict, diagnostics: dict):
     slide = blank_slide(prs)
     add_header(slide, "Final performance on unseen locations", "Protected holdout", 7)
+
+    sensitivity = diagnostics["protected_holdout_sensitivity"]
 
     add_label(
         slide,
@@ -866,9 +948,19 @@ def slide_7(prs: Presentation, evaluation: dict):
         color=RED,
     )
     metrics = [
-        ("RMSE", f"{evaluation['rmse']:.2f}", "price-density units", ORANGE),
-        ("MAE", f"{evaluation['mae']:.2f}", "price-density units", BLUE),
-        ("R²", f"{evaluation['r2']:.3f}", "unitless", TEAL),
+        (
+            "RMSE",
+            f"{evaluation['rmse']:.2f}",
+            f"≈ {round(evaluation['rmse'] * 10_000, -2):,.0f} TWD/ping",
+            ORANGE,
+        ),
+        (
+            "MAE",
+            f"{evaluation['mae']:.2f}",
+            f"≈ {round(evaluation['mae'] * 10_000, -2):,.0f} TWD/ping avg. miss",
+            BLUE,
+        ),
+        ("R²", f"{evaluation['r2']:.3f}", "56.9% less squared error vs mean", TEAL),
     ]
     for index, (label, value, unit, accent) in enumerate(metrics):
         add_card(
@@ -904,23 +996,44 @@ def slide_7(prs: Presentation, evaluation: dict):
     add_picture_contain(
         slide, config.REPORTS_DIR / "model_pred_vs_actual.png", 4.88, 1.68, 7.5, 4.25
     )
-    add_rect(slide, 7.82, 5.78, 4.42, 0.68, fill=RED_LIGHT, line=RED)
+    add_rect(slide, 7.12, 5.52, 5.12, 0.94, fill=RED_LIGHT, line=RED)
     add_text(
         slide,
-        "117.5 actual → 40.1 predicted · |error| ≈ 77.4",
-        8.02,
-        6.0,
-        4.02,
+        (
+            f"117.5 actual → 40.1 predicted · "
+            f"{sensitivity['largest_error_share_of_total_squared_error']:.0%} of squared error"
+        ),
+        7.34,
+        5.72,
+        4.7,
         0.23,
-        size=11,
+        size=10.5,
         color=RED,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
+    add_text(
+        slide,
+        (
+            f"Training max {sensitivity['development_target_max']:.1f} · "
+            f"RMSE without that row {sensitivity['rmse_without_largest_error']:.2f}"
+        ),
+        7.34,
+        6.08,
+        4.7,
+        0.2,
+        size=9,
+        color=MUTED,
         bold=True,
         align=PP_ALIGN.CENTER,
     )
 
     add_footer(
         slide,
-        "The protected row is reported as a limitation; tuning is not reopened after seeing it",
+        (
+            "This explains the estimate's imprecision; it does not excuse the miss or "
+            "replace the official 10.48"
+        ),
     )
 
 
@@ -1166,16 +1279,18 @@ def slide_9(prs: Presentation):
     )
 
 
-def slide_10(prs: Presentation):
+def slide_10(prs: Presentation, diagnostics: dict):
     slide = blank_slide(prs, NAVY)
     add_header(slide, "The interview story in five moves", "Close", 10, dark=True)
+
+    sensitivity = diagnostics["protected_holdout_sensitivity"]
 
     story = [
         ("1", "Frame", "Supervised regression for analyst decision support."),
         ("2", "Protect", "Pin the source; split locations before target-aware EDA."),
         ("3", "Learn", "Use correlations for hypotheses; compare on grouped folds."),
-        ("4", "Choose", "Bound tuning; lowest grouped-CV RMSE wins."),
-        ("5", "Report", "Freeze, test once, report the expensive-tail weakness."),
+        ("4", "Choose", "Predeclare the rule; freeze the grouped-CV winner."),
+        ("5", "Report", "Disclose nested-CV ambiguity and expensive-tail weakness."),
     ]
     for index, (number, title, detail) in enumerate(story):
         y = 1.48 + index * 0.9
@@ -1208,8 +1323,9 @@ def slide_10(prs: Presentation):
         slide,
         (
             "• 414 rows · one district · 2012–2013\n"
-            "• final RMSE 10.48 with wide uncertainty\n"
-            "• fixed-width interval; no live feedback loop"
+            "• nonlinear ranking is uncertain under nested CV\n"
+            f"• one row drives {sensitivity['largest_error_share_of_total_squared_error']:.0%} "
+            "of final squared error"
         ),
         7.8,
         2.3,
@@ -1224,8 +1340,8 @@ def slide_10(prs: Presentation):
     add_text(
         slide,
         (
-            "Recent, broader transactions—especially expensive properties—then a "
-            "new protected time/geography test."
+            "Predeclare nested selection on broader, recent data—especially expensive "
+            "properties—then evaluate once on a fresh time/geography holdout."
         ),
         7.8,
         4.58,
@@ -1254,7 +1370,7 @@ def slide_10(prs: Presentation):
     add_footer(slide, "Questions", dark=True)
 
 
-def build(metadata: dict, evaluation: dict) -> Presentation:
+def build(metadata: dict, evaluation: dict, diagnostics: dict) -> Presentation:
     prs = Presentation()
     prs.slide_width = Inches(SLIDE_W)
     prs.slide_height = Inches(SLIDE_H)
@@ -1262,18 +1378,18 @@ def build(metadata: dict, evaluation: dict) -> Presentation:
     slide_2(prs, metadata)
     slide_3(prs, metadata)
     slide_4(prs)
-    slide_5(prs, metadata)
+    slide_5(prs, metadata, diagnostics)
     slide_6(prs)
-    slide_7(prs, evaluation)
+    slide_7(prs, evaluation, diagnostics)
     slide_8(prs, metadata, evaluation)
     slide_9(prs)
-    slide_10(prs)
+    slide_10(prs, diagnostics)
     return prs
 
 
 def main() -> None:
-    metadata, evaluation = load_results()
-    prs = build(metadata, evaluation)
+    metadata, evaluation, diagnostics = load_results()
+    prs = build(metadata, evaluation, diagnostics)
     prs.save(OUTPUT)
     print(f"wrote {OUTPUT} with {len(prs.slides)} slides")
 

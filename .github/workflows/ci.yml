@@ -37,7 +37,7 @@ jobs:
         run: uv run python -m house_prices.evaluate
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run python -m pytest
 
   container:
     name: Docker build and smoke test
